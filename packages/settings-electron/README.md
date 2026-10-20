@@ -104,3 +104,7 @@ bun build src/preload/settings.ts --outfile out/preload/settings.cjs --target no
 
 `bun run check`: builds `@app-patterns/commands`, `@app-patterns/settings` and `@app-patterns/settings-react`, type-checks, runs the tests (fake
 Electron, a real store in a temporary folder) and builds.
+
+## Check for Updates
+
+Pass `checkForUpdates: async () => { await checker.checkNow(); }` to `installSettings`. The preload's `checkForUpdates()` calls that callback through a zero-argument channel, restricted to the Settings window's own top frame. The app's checker supplies the Store and busy-mode rules. No feed URL, address or version is accepted from the renderer.

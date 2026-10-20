@@ -1,3 +1,4 @@
+import type { UpdatesProps } from "@app-patterns/updates-react";
 /** Props and callbacks of the Settings window. Everything the window knows arrives as props; everything it does leaves through `actions`. */
 import type { MenuDecl, RebindCheck } from "@app-patterns/commands";
 import type { ChangeFilter, ImportPreview, Schema, SettingsState, SettingValue } from "@app-patterns/settings";
@@ -159,7 +160,7 @@ export interface SettingsWindowProps {
   rowHints?: Record<string, RowHint>;
   /** Menus the app declares, so the Shortcuts inspector can say where a command sits. */
   menus?: MenuDecl<string>[];
-  update?: UpdateStatus;
+  update?: UpdateStatus | UpdatesProps;
   /** Changes newer than this (ms) are new: the badge, the agent highlight. Default: now, so nothing is new. */
   changesSeenAt?: number;
   /**

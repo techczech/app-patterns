@@ -583,3 +583,13 @@ describe("invariant 3 for keys", () => {
     expect(text).not.toContain(KEY.slice(3, 15));
   });
 });
+
+test("checkForUpdates is confined to the Settings window and takes no arguments", async () => {
+  let checks = 0;
+  const h = await harness({ checkForUpdates: () => { checks++; } });
+  h.host.openSettingsWindow();
+  expect(await h.call(CHANNELS.checkForUpdates)).toEqual({ ok: true });
+  expect(checks).toBe(1);
+  expect(await h.call(CHANNELS.checkForUpdates, "unexpected")).toEqual(invalid);
+  expect(checks).toBe(1);
+});

@@ -14,6 +14,7 @@ import type { IpcRendererLike } from "./electron-types.ts";
 export interface SettingsBridge extends Required<Omit<SettingsActions, "signOut" | "checkForUpdates">> {
   /** Everything the window shows now (state, slots, app info), and the section it was opened at. */
   view(): Promise<SettingsView>;
+  checkForUpdates(): Promise<void>;
   /** Called with the new view after every change, from the window or from outside (the CLI, another process). Returns an unsubscribe. */
   onChanged(listener: (view: SettingsView) => void): () => void;
   /** Called when the app asks an open window to show a section (or start an import there). Returns an unsubscribe. */
@@ -28,6 +29,10 @@ export function createSettingsBridge(ipc: IpcRendererLike): SettingsBridge {
     return () => void ipc.removeListener(channel, wrapped);
   };
   return {
+    checkForUpdates: async () => {
+      const result = await op(CHANNELS.checkForUpdates);
+      if (!result.ok) throw new Error(result.error);
+    },
     view: () => ipc.invoke(CHANNELS.view) as Promise<SettingsView>,
     onChanged: (listener) => subscribe<SettingsView>(CHANNELS.changed, listener),
     onSection: (listener) => subscribe<SectionRequest>(CHANNELS.section, listener),

@@ -1044,3 +1044,13 @@ describe("the window follows the core, not its own logic", () => {
     expect(text(container.querySelector(".bsw-phead .bsw-meta"))).toBe("1 changed from default");
   });
 });
+
+test("the About Updates slot renders the shared update card", async () => {
+  const latest = { version: "1.2.0", released: "2026-10-21", summary: ["One change."], notes: "https://editor.example/notes", download: { mac: "https://editor.example/mac", windows: "https://editor.example/windows" } };
+  const snap = { identity: { appName: "Example Editor", feedUrl: "https://editor.example/updates.json" }, running: "1.1.0", platform: "darwin", source: "website" as const, enabled: true, checking: false, busy: false, waiting: false, state: { latest }, mark: latest, whatsNew: null };
+  const noop = async () => {};
+  const m = mount({ initial: { section: "about" }, update: { snapshot: snap, actions: { check: async () => snap, setEnabled: noop, download: noop, notNow: noop, skip: noop, stopSkipping: noop, openNotes: noop, openStore: noop, dismissWhatsNew: noop, loadNotes: async () => null, showNotes: () => {} } } });
+  await flush();
+  expect(m.getByRole("switch", { name: "Check for new versions" })).not.toBeNull();
+  expect(m.getByText(/internet address/).textContent).toContain("editor.example");
+});

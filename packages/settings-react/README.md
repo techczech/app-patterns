@@ -87,3 +87,7 @@ macOS app menu and save panel, which the host draws natively; the rest is this p
 
 `bun run check`: regenerates the CSS string, type-checks, runs the tests and builds (`dist` is plain `tsc` output,
 with the production JSX runtime). `build` first builds `@app-patterns/commands` and `@app-patterns/settings`.
+
+## Update notices
+
+The About pane's `update` prop accepts `{ snapshot, actions }` from `@app-patterns/updates-react` and renders `AboutUpdatesCard`. The Settings stylesheet and `SETTINGS_CSS` include the card's styles. The previous `{ text, detail, tone }` status prop remains supported. See [the updates React package](../updates-react/README.md).

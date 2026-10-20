@@ -8,9 +8,11 @@ Shared patterns for desktop apps, written in TypeScript. One command registry dr
 - [`@app-patterns/settings`](packages/settings/README.md) provides the settings schema, history, undo, transfer, file store and agent CLI.
 - [`@app-patterns/settings-react`](packages/settings-react/README.md) renders the Settings window from props and supplies its stylesheet.
 - [`@app-patterns/settings-electron`](packages/settings-electron/README.md) connects the settings store, window, menus, preload bridge and encrypted key slots in Electron.
+- [`@app-patterns/updates`](packages/updates/README.md) provides release-feed validation, version comparison, daily checking, skip and snooze state, seen notes and a bounded Electron fetcher.
+- [`@app-patterns/updates-react`](packages/updates-react/README.md) provides quiet status marks, the release popover and the About and updates card.
 - `@app-patterns/outline` provides Markdown outline ranges and CodeMirror commands.
 
-All packages are version 0.3.0. The React components require React and lucide-react; the Electron host requires Electron. See each package manifest for supported peer versions.
+All packages are version 0.4.0. The React components require React and lucide-react; the Electron host requires Electron. See each package manifest for supported peer versions.
 
 ## Install with vendored tarballs
 
@@ -22,7 +24,7 @@ bun run check
 bun run release:pack
 ```
 
-In your app, declare the packages you need in `package.json`, for example `"@app-patterns/settings-react": "^0.3.0"`. Commit that declaration before vendoring. From this repository, preview and then apply the dependency changes:
+In your app, declare the packages you need in `package.json`, for example `"@app-patterns/settings-react": "^0.4.0"`. Commit that declaration before vendoring. From this repository, preview and then apply the dependency changes:
 
 ```sh
 bun run release:vendor /path/to/your-app
@@ -44,6 +46,10 @@ bun run check
 ```
 
 `check` builds dependencies first, then runs each package's typecheck, tests and build in dependency order, followed by the release tooling tests. Tests run headlessly with DOM and Electron test doubles. They do not launch an app or use the keychain. `bun run test` runs the package and tooling tests without rebuilding.
+
+## Update notices
+
+Apps supply their feed URL, fixed product name, Store detection, busy predicate, state storage and local notes. The shared checker waits two minutes after launch, checks daily and never requests a feed for Store or development copies. It tells users about releases and links to the download page. The React card fits the Settings window's existing `update` slot; the Electron settings bridge exposes `checkForUpdates()`. See the two update package READMEs for the feed contract and integration.
 
 ## Origin and compatibility
 
