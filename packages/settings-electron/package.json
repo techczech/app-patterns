@@ -1,0 +1,64 @@
+{
+  "name": "@app-patterns/settings-electron",
+  "version": "0.3.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "The Electron host for the shared Settings window: bridle-settings: IPC over the settings store, the single Settings window, the generated menu, export and import panels, key slots over safeStorage, and the preload bridge.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build:deps": "bun run --cwd ../commands build && bun run --cwd ../settings build && bun run --cwd ../settings-react build",
+    "build:js": "bun build ./src/index.ts ./src/main.ts ./src/preload.ts --root ./src --outdir dist --target node --format esm --packages external --splitting",
+    "build:types": "tsc -p tsconfig.build.json",
+    "build": "bun run build:js && bun run build:types",
+    "test": "bun test",
+    "check": "bun run build:deps && bun run typecheck && bun test && bun run build"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./main": {
+      "types": "./dist/main.d.ts",
+      "import": "./dist/main.js",
+      "default": "./dist/main.js"
+    },
+    "./preload": {
+      "types": "./dist/preload.d.ts",
+      "import": "./dist/preload.js",
+      "default": "./dist/preload.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "peerDependencies": {
+    "@app-patterns/commands": "^0.3.0",
+    "@app-patterns/settings": "^0.3.0",
+    "@app-patterns/settings-react": "^0.3.0",
+    "electron": ">=30 <43"
+  },
+  "peerDependenciesMeta": {
+    "@app-patterns/commands": {
+      "optional": true
+    },
+    "@app-patterns/settings": {
+      "optional": true
+    },
+    "@app-patterns/settings-react": {
+      "optional": true
+    },
+    "electron": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@app-patterns/commands": "workspace:*",
+    "@app-patterns/settings": "workspace:*",
+    "@app-patterns/settings-react": "workspace:*",
+    "@types/bun": "^1.3.14",
+    "typescript": "6.0.3"
+  }
+}

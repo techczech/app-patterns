@@ -1,0 +1,35 @@
+{
+  "name": "@app-patterns/settings",
+  "version": "0.3.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Shared app settings: one schema, the settings file, its changelog, reset, undo, and export and import. The ./node entry adds the file on disk, its lock, the watched store and the agent CLI.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build:js": "bun build ./src/index.ts ./src/node/index.ts --root ./src --outdir dist --target node --format esm --packages external --splitting",
+    "build:types": "tsc -p tsconfig.build.json",
+    "build": "bun run build:js && bun run build:types",
+    "test": "bun test",
+    "check": "bun run typecheck && bun test && bun run build"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node/index.d.ts",
+      "import": "./dist/node/index.js",
+      "default": "./dist/node/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "6.0.3"
+  }
+}

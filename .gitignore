@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Built tarballs are ignored; releases/manifest.json is tracked.
+releases/*.tgz
+releases/.staging/

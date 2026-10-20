@@ -1,0 +1,17 @@
+{
+  "name": "app-patterns-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.10",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "bun test packages scripts",
+    "build": "bun run scripts/run-workspaces.mjs build",
+    "typecheck": "bun run build && bun run scripts/run-workspaces.mjs typecheck",
+    "check": "bun run build && bun run scripts/run-workspaces.mjs check && bun test scripts",
+    "release:pack": "bun run scripts/release-pack.mjs",
+    "release:vendor": "bun run scripts/release-vendor.mjs"
+  }
+}

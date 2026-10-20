@@ -1,0 +1,30 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": [
+      "ES2023"
+    ],
+    "resolveJsonModule": true,
+    "paths": {
+      "@app-patterns/commands": [
+        "../commands/src/index.ts"
+      ],
+      "@app-patterns/settings": [
+        "../settings/src/index.ts"
+      ],
+      "@app-patterns/settings/node": [
+        "../settings/src/node/index.ts"
+      ],
+      "@app-patterns/settings-react": [
+        "../settings-react/src/types.ts"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}

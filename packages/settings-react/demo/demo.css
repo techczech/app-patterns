@@ -1,0 +1,54 @@
+/* Demo page chrome: the stage, the fake menu bar and window frame, and the macOS panels the host draws natively. Not part of the package. */
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#e4e5e9;color:#1d1d1f;font:13px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit}
+.page{width:1180px;margin:0 auto;padding:20px 0 30px}
+.ident{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+.badge{background:#1f9d4d;color:#fff;font-size:20px;font-weight:700;padding:14px 18px;border-radius:6px;white-space:nowrap}
+.ident .nm{font-size:22px;font-weight:700}
+.ident .sub{color:#555a63;font-size:13px;margin-top:3px}
+.fbar{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px}
+.fbar button{border:1px solid #c3c6cd;background:#f4f5f7;padding:5px 9px;border-radius:5px;cursor:pointer;display:flex;gap:6px;align-items:center;font-size:12px}
+.fbar button b{display:inline-block;min-width:16px;height:16px;line-height:16px;text-align:center;background:#d3d6dc;border-radius:3px;font-size:11px}
+.fbar button.on{background:#1d1d1f;color:#fff;border-color:#1d1d1f}
+.fbar button.on b{background:#555;color:#fff}
+.stage{position:relative;width:1180px;height:790px;background:#a7adb8;border-radius:6px;overflow:hidden}
+.menubar{position:absolute;left:0;right:0;top:0;height:24px;background:#e9eaee;border-bottom:1px solid #c5c8cf;display:flex;align-items:center;padding:0 12px;gap:18px;font-size:13px;z-index:30}
+.menubar .ap{font-weight:700}
+.menubar .m{padding:2px 8px;border-radius:4px}
+.menubar .m.open{background:#0a64d8;color:#fff}
+.menubar .sp{flex:1}
+.appmenu{position:absolute;left:40px;top:26px;width:270px;background:#f2f2f5;border:1px solid #b9bcc4;border-radius:8px;padding:5px;z-index:31;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.appmenu div{padding:4px 10px;border-radius:4px;display:flex;justify-content:space-between}
+.appmenu div.hl{background:#0a64d8;color:#fff}
+.appmenu div.dim{color:#8a8d95}
+.appmenu hr{border:0;border-top:1px solid #d3d5db;margin:4px 6px}
+.win{position:absolute;left:90px;top:50px;width:1000px;height:690px;background:#ececf0;border-radius:10px;border:1px solid #8b909a;box-shadow:0 20px 50px rgba(0,0,0,.35);overflow:hidden;display:flex;flex-direction:column}
+.titlebar{height:40px;flex:none;background:#f6f6f8;border-bottom:1px solid #cfd1d8;display:flex;align-items:center;padding:0 14px;position:relative}
+.lights{display:flex;gap:8px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.lights i:nth-child(1){background:#ff5f57}.lights i:nth-child(2){background:#febc2e}.lights i:nth-child(3){background:#28c840}
+.titlebar .tt{position:absolute;left:0;right:0;text-align:center;font-weight:600;font-size:13px;pointer-events:none}
+.save{width:500px;padding:16px 20px 16px}
+.save .fl{display:grid;grid-template-columns:70px 1fr;gap:8px 10px;align-items:center;margin-bottom:12px}
+.save .fl label{text-align:right;color:#3c3f46}
+.save .fld{height:24px;border:1px solid #c3c5cc;border-radius:5px;background:#fff;padding:0 7px;display:flex;align-items:center;box-shadow:0 0 0 3px rgba(10,100,216,.25);border-color:#0a64d8}
+.save .fld .selt{background:#b4d3fb;border-radius:2px}
+.save .fld2{height:24px;border:1px solid #c3c5cc;border-radius:5px;background:#fff;padding:0 7px;display:flex;align-items:center;color:#9a9da6}
+.save .pop{height:24px;width:220px;border:1px solid #c3c5cc;border-radius:5px;background:#fff;padding:0 6px 0 7px;display:flex;align-items:center;gap:6px;box-shadow:0 1px 0 rgba(0,0,0,.06)}
+.save .pop svg{width:14px;height:14px;color:#3d7bd9;flex:none}
+.save .pop .cv{margin-left:auto;color:#6b6f78}
+.mainapp{position:absolute;left:90px;top:50px;width:1000px;height:690px;background:#fff;border-radius:10px;border:1px solid #8b909a;box-shadow:0 20px 50px rgba(0,0,0,.3);overflow:hidden}
+.mainapp .tb{height:40px;background:#f6f6f8;border-bottom:1px solid #cfd1d8;display:flex;align-items:center;padding:0 14px}
+.mainapp .tt{position:absolute;left:0;right:0;top:12px;text-align:center;font-weight:600}
+.mainapp .doc{padding:50px 200px}
+.mainapp .doc .ln{height:10px;background:#e3e4e8;border-radius:3px;margin-bottom:14px}
+.mainapp .doc .hd{height:20px;width:50%;background:#c9cbd2;border-radius:3px;margin-bottom:24px}
+.win .d-body{flex:1;height:auto;min-height:0}
+.d-scrim{position:absolute;inset:40px 0 0 0;background:rgba(0,0,0,.28);display:flex;justify-content:center;align-items:flex-start;z-index:20}
+.save .bsw-acts{display:flex;justify-content:flex-end;gap:8px;align-items:center}
+.menubar .d-clock{margin-right:2px}
+.d-hint{color:#555a63;font-size:12px;margin-top:10px}
+
+.bsw-sheet.save{width:500px;padding:16px 20px}
+.stage{--bsw-accent:#0a64d8;--bsw-accent-dark:#0a54b8;--bsw-accent-ring:rgba(10,100,216,.25)}
