@@ -7,7 +7,7 @@
     },
     "packages/commands": {
       "name": "@app-patterns/commands",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "devDependencies": {
         "@types/bun": "^1.3.14",
         "typescript": "6.0.3",
@@ -15,7 +15,7 @@
     },
     "packages/outline": {
       "name": "@app-patterns/outline",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "dependencies": {
         "@codemirror/language": "^6.12.4",
         "@codemirror/state": "^6.7.0",
@@ -30,7 +30,7 @@
     },
     "packages/settings": {
       "name": "@app-patterns/settings",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "devDependencies": {
         "@types/bun": "^1.3.14",
         "typescript": "6.0.3",
@@ -38,7 +38,7 @@
     },
     "packages/settings-electron": {
       "name": "@app-patterns/settings-electron",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "devDependencies": {
         "@app-patterns/commands": "workspace:*",
         "@app-patterns/settings": "workspace:*",
@@ -47,9 +47,9 @@
         "typescript": "6.0.3",
       },
       "peerDependencies": {
-        "@app-patterns/commands": "^0.4.0",
-        "@app-patterns/settings": "^0.4.0",
-        "@app-patterns/settings-react": "^0.4.0",
+        "@app-patterns/commands": "^0.4.1",
+        "@app-patterns/settings": "^0.4.1",
+        "@app-patterns/settings-react": "^0.4.1",
         "electron": ">=30 <43",
       },
       "optionalPeers": [
@@ -61,7 +61,7 @@
     },
     "packages/settings-react": {
       "name": "@app-patterns/settings-react",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "devDependencies": {
         "@app-patterns/commands": "workspace:*",
         "@app-patterns/settings": "workspace:*",
@@ -79,10 +79,10 @@
         "typescript": "6.0.3",
       },
       "peerDependencies": {
-        "@app-patterns/commands": "^0.4.0",
-        "@app-patterns/settings": "^0.4.0",
-        "@app-patterns/updates": "^0.4.0",
-        "@app-patterns/updates-react": "^0.4.0",
+        "@app-patterns/commands": "^0.4.1",
+        "@app-patterns/settings": "^0.4.1",
+        "@app-patterns/updates": "^0.4.1",
+        "@app-patterns/updates-react": "^0.4.1",
         "lucide-react": ">=0.468.0 <2",
         "react": ">=18",
       },
@@ -93,7 +93,7 @@
     },
     "packages/updates": {
       "name": "@app-patterns/updates",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "devDependencies": {
         "@types/bun": "^1.3.14",
         "typescript": "6.0.3",
@@ -101,7 +101,7 @@
     },
     "packages/updates-react": {
       "name": "@app-patterns/updates-react",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "devDependencies": {
         "@app-patterns/updates": "workspace:*",
         "@testing-library/react": "16.3.0",
@@ -116,7 +116,7 @@
         "typescript": "6.0.3",
       },
       "peerDependencies": {
-        "@app-patterns/updates": "^0.4.0",
+        "@app-patterns/updates": "^0.4.1",
         "lucide-react": ">=0.468.0 <2",
         "react": ">=18",
         "react-dom": ">=18",

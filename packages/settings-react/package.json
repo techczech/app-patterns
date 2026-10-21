@@ -1,6 +1,6 @@
 {
   "name": "@app-patterns/settings-react",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -34,12 +34,12 @@
     "dist"
   ],
   "peerDependencies": {
-    "@app-patterns/commands": "^0.4.0",
-    "@app-patterns/settings": "^0.4.0",
+    "@app-patterns/commands": "^0.4.1",
+    "@app-patterns/settings": "^0.4.1",
     "lucide-react": ">=0.468.0 <2",
     "react": ">=18",
-    "@app-patterns/updates": "^0.4.0",
-    "@app-patterns/updates-react": "^0.4.0"
+    "@app-patterns/updates": "^0.4.1",
+    "@app-patterns/updates-react": "^0.4.1"
   },
   "devDependencies": {
     "@app-patterns/commands": "workspace:*",

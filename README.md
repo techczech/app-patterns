@@ -12,7 +12,7 @@ Shared patterns for desktop apps, written in TypeScript. One command registry dr
 - [`@app-patterns/updates-react`](packages/updates-react/README.md) provides quiet status marks, the release popover and the About and updates card.
 - `@app-patterns/outline` provides Markdown outline ranges and CodeMirror commands.
 
-All packages are version 0.4.0. The React components require React and lucide-react; the Electron host requires Electron. See each package manifest for supported peer versions.
+All packages are version 0.4.1. The React components require React and lucide-react; the Electron host requires Electron. See each package manifest for supported peer versions.
 
 ## Install with vendored tarballs
 
@@ -24,7 +24,7 @@ bun run check
 bun run release:pack
 ```
 
-In your app, declare the packages you need in `package.json`, for example `"@app-patterns/settings-react": "^0.4.0"`. Commit that declaration before vendoring. From this repository, preview and then apply the dependency changes:
+In your app, declare the packages you need in `package.json`, for example `"@app-patterns/settings-react": "^0.4.1"`. Commit that declaration before vendoring. From this repository, preview and then apply the dependency changes:
 
 ```sh
 bun run release:vendor /path/to/your-app
