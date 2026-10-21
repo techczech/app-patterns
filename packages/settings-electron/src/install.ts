@@ -261,7 +261,7 @@ export function installSettingsWith<G extends string, Ctx>(electron: ElectronDep
     return {
       state: store.view(),
       slots: slotState,
-      appInfo: { ...opts.appInfo, name: appName(), version: app.getVersion() },
+      appInfo: { ...opts.appInfo, name: appName(), version: app.getVersion(), canCheckForUpdates: typeof opts.checkForUpdates === "function" },
       ...(problem ? { problem: problem.error } : {}),
     };
   };

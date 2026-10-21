@@ -107,3 +107,39 @@ test('entering busy mode immediately after asking never starts a request while b
   expect(h.requestBusyStates).not.toContain(true);
   h.checker.stop();
 });
+
+
+test('unsafe schemes are rejected in every feed link', () => {
+  for (const url of ['javascript:alert(1)', 'file:///tmp/update', 'data:text/html,update', 'http://editor.example/download']) {
+    for (const change of [{ notes: url }, { download: { ...latest.download, mac: url } }, { download: { ...latest.download, windows: url } }]) {
+      expect(validateFeed(text({ ...latest, ...change }), identity.feedUrl).ok).toBe(false);
+    }
+  }
+});
+
+test('Mac copy facts distinguish Apple silicon and Intel', async () => {
+  const { aboutLines } = await import('./index.ts');
+  expect(aboutLines({ ...context, arch: 'arm64' }).where).toContain('Mac (Apple silicon)');
+  expect(aboutLines({ ...context, arch: 'x64' }).where).toContain('Mac (Intel)');
+  const h = harness();
+  expect(h.checker.snapshot().arch).toBe(process.arch);
+});
+
+test('guarded opener binds identity, validates stored feed and never accepts caller URLs', async () => {
+  const { createUpdateLinkOpener } = await import('./electron.ts');
+  const opened: string[] = [];
+  let release: unknown = latest;
+  const open = createUpdateLinkOpener({ openExternal: async url => { opened.push(url); } }, { ...identity, storeUrl: 'https://store.example/editor' }, () => release, 'darwin');
+  expect(await open('download')).toBe(true);
+  expect(await open('notes', '1.2.0')).toBe(true);
+  expect(await open('notes', '1.1.0')).toBe(false);
+  expect(await open('store')).toBe(true);
+  expect(await open('https://evil.example' as never)).toBe(false);
+  release = { ...latest, notes: 'https://evil.example/notes' };
+  expect(await open('download')).toBe(false);
+  for (const storeUrl of ['javascript:alert(1)', 'file:///tmp/update', 'data:text/html,update', 'http://store.example/editor', 'https://user@store.example/editor']) {
+    expect(await createUpdateLinkOpener({ openExternal: async () => { throw Error('must not open'); } }, { ...identity, storeUrl }, () => latest)('store')).toBe(false);
+  }
+  expect(opened).toEqual([latest.download.mac, latest.notes, 'https://store.example/editor']);
+  expect(await createUpdateLinkOpener({ openExternal: async () => { throw Error('browser unavailable'); } }, identity, () => latest)('notes')).toBe(false);
+});

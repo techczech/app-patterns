@@ -23,7 +23,12 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
-    "./settings.css": "./dist/settings.css"
+    "./settings.css": "./dist/settings.css",
+    "./updates": {
+      "types": "./dist/updates.d.ts",
+      "import": "./dist/updates.js",
+      "default": "./dist/updates.js"
+    }
   },
   "files": [
     "dist"
@@ -51,5 +56,13 @@
     "typescript": "6.0.3",
     "@app-patterns/updates": "workspace:*",
     "@app-patterns/updates-react": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@app-patterns/updates": {
+      "optional": true
+    },
+    "@app-patterns/updates-react": {
+      "optional": true
+    }
   }
 }

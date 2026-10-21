@@ -26,7 +26,7 @@ export function useUpdates(): UpdatesProps {
   return value
 }
 export const viewContext = (snap: UpdateSnapshot) => ({
-  identity: snap.identity, running: snap.running, platform: snap.platform, source: snap.source,
+  identity: snap.identity, running: snap.running, platform: snap.platform, arch: snap.arch, source: snap.source,
   enabled: snap.enabled, checking: snap.checking, now: Date.now()
 })
 export const answerOf = (snap: UpdateSnapshot): AnswerView => snap.waiting

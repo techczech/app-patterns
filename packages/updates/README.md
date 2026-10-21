@@ -70,3 +70,20 @@ The first automatic check waits two minutes. Later checks run daily; a successfu
 The Electron adapter makes one GET through Electron's system-proxy-aware network stack. It creates a dedicated in-memory partition with caching disabled, omits credentials and cookies, refuses redirects, sends a fixed product-name User-Agent and aborts after ten seconds or 64 KB. It accepts no per-user or version parameter. The host still sees the computer's internet address. Feed URLs with credentials, a query or a fragment are rejected.
 
 The app supplies Store detection, busy detection, state storage, settings and the local notes loader. It also owns commands, platform menus, validated browser links and release checks. Store copies open their store listing and keep local What's new, while suppressing the daily switch and available-version mark. Publish the release and downloads before changing the feed; ship notes for each release and check the live feed against the published version at release time.
+
+
+## Guarded browser links (TalkWeaver-shaped host example)
+
+Bind the opener in main to the same fixed identity and checker. Renderer IPC supplies only a link kind and an optional version; never accept an address. The opener revalidates the feed entry on every call and opens its download or notes only for this identity. Store links come only from the configured HTTPS listing URL. Missing or mismatched versions return `false`.
+
+```ts
+import { createUpdateLinkOpener } from "@app-patterns/updates/electron";
+import { shell } from "electron";
+const openUpdateLink = createUpdateLinkOpener(shell, identity, () => checker.snapshot().state.latest);
+// The app's guarded IPC handlers call:
+await openUpdateLink("download");
+await openUpdateLink("notes", requestedVersion);
+await openUpdateLink("store");
+```
+
+Pass `arch: process.arch` when constructing the main-side checker, or let it read the main process architecture. Snapshots carry that value to the UI, which distinguishes Apple silicon and Intel Macs.

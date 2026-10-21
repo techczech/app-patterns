@@ -593,3 +593,13 @@ test("checkForUpdates is confined to the Settings window and takes no arguments"
   expect(await h.call(CHANNELS.checkForUpdates, "unexpected")).toEqual(invalid);
   expect(checks).toBe(1);
 });
+
+
+test('view declares a legacy update checker only when the host installed one', async () => {
+  const absent = await harness();
+  absent.host.openSettingsWindow();
+  expect(((await absent.call(CHANNELS.view)) as SettingsView).appInfo.canCheckForUpdates).toBe(false);
+  const present = await harness({ checkForUpdates: async () => {} });
+  present.host.openSettingsWindow();
+  expect(((await present.call(CHANNELS.view)) as SettingsView).appInfo.canCheckForUpdates).toBe(true);
+});

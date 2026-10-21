@@ -37,7 +37,7 @@ import { dirname, join, posix, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { lineDiff } from "./release-json-edit.mjs";
-import { loadManifest } from "./release-pack.mjs";
+import { loadManifest, frameworkPeers } from "./release-pack.mjs";
 import {
   LEDGER_FILE,
   VENDOR_DIR,
@@ -105,7 +105,7 @@ export function createReleaseLoader(releasesDir, manifest) {
     if (hardFrameworkDeps.length) {
       throw new Error(`${file} declares ${hardFrameworkDeps.join(", ")} as dependencies; App Patterns Framework packages declare siblings as peers.`);
     }
-    const needs = frameworkEntries(archived.peerDependencies);
+    const needs = frameworkPeers(archived);
     if (!sameRecord(needs, record.frameworkPeers)) {
       throw new Error(
         `manifest.json frameworkPeers for ${name} ${JSON.stringify(frameworkEntries(record.frameworkPeers))} does not match its archive ${JSON.stringify(needs)}.`,

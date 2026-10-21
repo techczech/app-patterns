@@ -348,3 +348,11 @@ test("tarballs refuse Windows home paths with either slash style and drive-lette
   }
   expect(forbiddenContents([{ path: "package/dist/index.js", data: Buffer.from("C:/Program Files/App Patterns Framework/bin") }])).toEqual([]);
 });
+
+
+test('optional framework peers do not become required tarballs', () => {
+  expect(frameworkPeers({
+    peerDependencies: { '@app-patterns/settings': '^0.4.0', '@app-patterns/updates': '^0.4.0' },
+    peerDependenciesMeta: { '@app-patterns/updates': { optional: true } },
+  })).toEqual({ '@app-patterns/settings': '^0.4.0' });
+});

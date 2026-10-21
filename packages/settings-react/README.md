@@ -90,4 +90,12 @@ with the production JSX runtime). `build` first builds `@app-patterns/commands` 
 
 ## Update notices
 
-The About pane's `update` prop accepts `{ snapshot, actions }` from `@app-patterns/updates-react` and renders `AboutUpdatesCard`. The Settings stylesheet and `SETTINGS_CSS` include the card's styles. The previous `{ text, detail, tone }` status prop remains supported. See [the updates React package](../updates-react/README.md).
+The base entry point requires no updates packages. For the rich About card, install the optional updates peers and opt in:
+
+```tsx
+import { SettingsWindow } from "@app-patterns/settings-react";
+import { SettingsUpdatesCard } from "@app-patterns/settings-react/updates";
+<SettingsWindow {...settingsProps} updateCard={<SettingsUpdatesCard snapshot={snapshot} actions={actions} />} />
+```
+
+The stylesheet includes the card styles. The legacy `update={{ text, detail, tone }}` prop remains supported. Its button appears only when `appInfo.canCheckForUpdates` is true and a checker action exists; errors appear in the Settings notice. The Electron host declares this capability automatically.

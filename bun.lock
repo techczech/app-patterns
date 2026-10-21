@@ -86,6 +86,10 @@
         "lucide-react": ">=0.468.0 <2",
         "react": ">=18",
       },
+      "optionalPeers": [
+        "@app-patterns/updates",
+        "@app-patterns/updates-react",
+      ],
     },
     "packages/updates": {
       "name": "@app-patterns/updates",

@@ -1,5 +1,5 @@
 import type { FeedAnswer } from './update-check.ts'
-import { feedRequest } from './update-feed.ts'
+import { feedRequest, validateFeedObject, downloadLinkFor } from './update-feed.ts'
 import type { UpdateIdentity } from './options.ts'
 
 interface ResponseLike {
@@ -62,4 +62,31 @@ export function createElectronFeedFetcher<S>(identity: UpdateIdentity, deps: Ele
       request.end()
     } catch { done({ ok: false, reason: 'unreachable' }) }
   })
+}
+
+/** Bind once in main. Callers select a kind/version, never an address. Persisted entries are revalidated. */
+export function createUpdateLinkOpener(
+  shell: { openExternal(url: string): Promise<unknown> },
+  identity: UpdateIdentity,
+  latest: () => unknown,
+  platform: string = process.platform,
+): (kind: 'download' | 'notes' | 'store', version?: string) => Promise<boolean> {
+  const spec = feedRequest(identity)
+  return async (kind, version) => {
+    let link: string | undefined
+    if (kind === 'store') {
+      try {
+        const url = new URL(identity.storeUrl ?? '')
+        if (url.protocol !== 'https:' || url.username || url.password || url.port) return false
+        link = url.href
+      } catch { return false }
+    } else if (kind === 'download' || kind === 'notes') {
+      const release = validateFeedObject({ schema: 1, latest: latest() }, spec.url)
+      if (!release || (version !== undefined && version !== release.version)) return false
+      if (kind === 'download' && platform !== 'darwin' && platform !== 'win32') return false
+      link = kind === 'notes' ? release.notes : downloadLinkFor(release, platform, spec.url)
+    }
+    if (!link) return false
+    try { await shell.openExternal(link); return true } catch { return false }
+  }
 }

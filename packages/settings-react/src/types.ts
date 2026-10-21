@@ -1,4 +1,3 @@
-import type { UpdatesProps } from "@app-patterns/updates-react";
 /** Props and callbacks of the Settings window. Everything the window knows arrives as props; everything it does leaves through `actions`. */
 import type { MenuDecl, RebindCheck } from "@app-patterns/commands";
 import type { ChangeFilter, ImportPreview, Schema, SettingsState, SettingValue } from "@app-patterns/settings";
@@ -96,6 +95,8 @@ export interface AppInfo {
   name: string;
   version: string;
   build?: string;
+  /** The host explicitly declares whether a legacy update checker is installed. */
+  canCheckForUpdates?: boolean;
   /** lucide icon name for the About card. */
   icon?: string;
   /** The agent command-line name; defaults to the schema's app id. */
@@ -160,7 +161,9 @@ export interface SettingsWindowProps {
   rowHints?: Record<string, RowHint>;
   /** Menus the app declares, so the Shortcuts inspector can say where a command sits. */
   menus?: MenuDecl<string>[];
-  update?: UpdateStatus | UpdatesProps;
+  update?: UpdateStatus;
+  /** Optional rich About card, supplied through the /updates entry point. */
+  updateCard?: import("react").ReactNode;
   /** Changes newer than this (ms) are new: the badge, the agent highlight. Default: now, so nothing is new. */
   changesSeenAt?: number;
   /**

@@ -14,10 +14,10 @@ export const WHATS_NEW_DAYS = 7
 export const SETTING_KEY = 'updates.checkForNewVersions'
 
 export type CheckOutcome = 'current' | 'newer' | 'unreachable' | 'unreadable'
-/** Where this copy came from: the website, the Microsoft Store, a preview build, or a development run. */
+/** Where this copy came from: the website, an app store, a preview build, or a development run. */
 export type CopySource = 'website' | 'store' | 'preview' | 'development'
 
-/** What is kept in userData/config.json (key `updateNotices`): state, not settings. */
+/** Persisted update state, separate from settings. */
 export interface UpdateState {
   /** The last SUCCESSFUL check (an answer that was a version list), ms since the epoch. */
   lastCheckAt?: number
@@ -156,13 +156,13 @@ const lastChecked = (state: UpdateState, now: number): string | null => {
 
 // ── The copy ────────────────────────────────────────────────────────────────────────────────────
 
-export interface CopyFacts { identity: UpdateIdentity; running: string; platform: string; source: CopySource }
+export interface CopyFacts { identity: UpdateIdentity; running: string; platform: string; arch?: string; source: CopySource }
 
-const PLATFORM_NAMES: Record<string, string> = { darwin: 'Mac (Apple silicon)', win32: 'Windows' }
+const PLATFORM_NAMES: Record<string, string> = { win32: 'Windows' }
 
 /** "Version 0.41.0" and the line under it (frames 03 and 06). */
 export function aboutLines(facts: CopyFacts): { version: string; where: string } {
-  const platform = PLATFORM_NAMES[facts.platform] ?? facts.platform
+  const platform = facts.platform === 'darwin' ? (facts.arch === 'arm64' ? 'Mac (Apple silicon)' : facts.arch === 'x64' ? 'Mac (Intel)' : 'Mac') : PLATFORM_NAMES[facts.platform] ?? facts.platform
   const where = facts.source === 'store' ? 'installed from the ' + (facts.identity.storeName ?? 'app store')
     : facts.source === 'preview' ? 'preview built for testing'
     : facts.source === 'development' ? 'development run'
@@ -297,7 +297,7 @@ export function parseWhatsNew(markdown: string): WhatsNewItem[] {
 
 // ── The note and presenting ─────────────────────────────────────────────────────────────────────
 
-/** What the answer note shows and what it holds back. While a talk is presented, recorded or live nothing is shown. */
+/** What the answer note shows and what it holds back. While the app reports itself busy nothing is shown. */
 export interface NoteState<V> { shown: V | null; held: V | null }
 export type NoteEvent<V> =
   | { kind: 'answer'; view: V | null; presenting: boolean }

@@ -45,7 +45,7 @@ export function emptyManifest() {
 export function frameworkPeers(manifest) {
   return Object.fromEntries(
     Object.entries(manifest.peerDependencies ?? {})
-      .filter(([name]) => name.startsWith(FRAMEWORK_SCOPE))
+      .filter(([name]) => name.startsWith(FRAMEWORK_SCOPE) && manifest.peerDependenciesMeta?.[name]?.optional !== true)
       .sort(([a], [b]) => (a < b ? -1 : 1)),
   );
 }

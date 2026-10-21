@@ -13,6 +13,7 @@ export interface UpdateSnapshot {
   identity: UpdateIdentity
   running: string
   platform: string
+  arch?: string
   source: CopySource
   /** The setting `updates.checkForNewVersions`. */
   enabled: boolean
@@ -32,6 +33,7 @@ export interface UpdateCheckerDeps {
   identity: UpdateIdentity
   running: string
   platform: string
+  arch?: string
   source: CopySource
   /** One GET of the feed (update-check-electron.ts). Never called for a store copy or a development run. */
   fetchFeed(): Promise<FeedAnswer>
@@ -72,7 +74,7 @@ export function createUpdateChecker(deps: UpdateCheckerDeps) {
     const busy = deps.isBusy()
     const whatsNew = whatsNewMark(state, deps.running)
     return {
-      identity: deps.identity, running: deps.running, platform: deps.platform, source: deps.source, enabled, checking: running !== null, state,
+      identity: deps.identity, running: deps.running, platform: deps.platform, arch: deps.arch ?? (typeof process !== 'undefined' ? process.arch : undefined), source: deps.source, enabled, checking: running !== null, state,
       mark: busy ? null : availableMark(state, { running: deps.running, source: deps.source, enabled, now }),
       whatsNew: whatsNew && deps.hasNotes(whatsNew.version) ? whatsNew : null,
       busy, waiting,
