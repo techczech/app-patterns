@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { compareVersions, validateFeed, feedRequest, readUpdateState, availableMark, noteLaunch, whatsNewMark, answerView, createUpdateChecker, CHECK_INTERVAL_MS, FIRST_CHECK_DELAY_MS } from './index.ts';
+import { noteReducer, compareVersions, validateFeed, feedRequest, readUpdateState, availableMark, noteLaunch, whatsNewMark, answerView, createUpdateChecker, CHECK_INTERVAL_MS, FIRST_CHECK_DELAY_MS } from './index.ts';
 
 const identity = { appName: 'Example Editor', feedUrl: 'https://editor.example/updates.json', storeName: 'Example Store' };
 const latest = { version: '1.2.0', released: '2026-10-21', summary: ['One change.'], notes: 'https://editor.example/notes', download: { mac: 'https://editor.example/download#mac', windows: 'https://editor.example/download#windows' } };
@@ -142,4 +142,20 @@ test('guarded opener binds identity, validates stored feed and never accepts cal
   }
   expect(opened).toEqual([latest.download.mac, latest.notes, 'https://store.example/editor']);
   expect(await createUpdateLinkOpener({ openExternal: async () => { throw Error('browser unavailable'); } }, identity, () => latest)('notes')).toBe(false);
+});
+
+
+describe('answer note busy state', () => {
+  test('holds answers while busy and shows them when the busy period ends', () => {
+    const held = noteReducer<string>({ shown: null, held: null }, { kind: 'answer', view: 'Update available', busy: true });
+    expect(held).toEqual({ shown: null, held: 'Update available' });
+    expect(noteReducer(held, { kind: 'busy', busy: false })).toEqual({ shown: 'Update available', held: null });
+  });
+  test('clears a visible answer when busy starts and shows idle answers immediately', () => {
+    const shown = noteReducer<string>({ shown: null, held: null }, { kind: 'answer', view: 'Up to date', busy: false });
+    expect(shown).toEqual({ shown: 'Up to date', held: null });
+    const busy = noteReducer(shown, { kind: 'busy', busy: true });
+    expect(busy).toEqual({ shown: null, held: null });
+    expect(noteReducer(busy, { kind: 'busy', busy: false })).toEqual({ shown: null, held: null });
+  });
 });

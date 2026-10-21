@@ -300,8 +300,8 @@ export function parseWhatsNew(markdown: string): WhatsNewItem[] {
 /** What the answer note shows and what it holds back. While the app reports itself busy nothing is shown. */
 export interface NoteState<V> { shown: V | null; held: V | null }
 export type NoteEvent<V> =
-  | { kind: 'answer'; view: V | null; presenting: boolean }
-  | { kind: 'presenting'; presenting: boolean }
+  | { kind: 'answer'; view: V | null; busy: boolean }
+  | { kind: 'busy'; busy: boolean }
   | { kind: 'dismiss' }
 
 /**
@@ -310,6 +310,6 @@ export type NoteEvent<V> =
  */
 export function noteReducer<V>(state: NoteState<V>, event: NoteEvent<V>): NoteState<V> {
   if (event.kind === 'dismiss') return { shown: null, held: null }
-  if (event.kind === 'answer') return event.presenting ? { shown: null, held: event.view } : { shown: event.view, held: null }
-  return event.presenting ? { shown: null, held: state.held } : { shown: state.held ?? state.shown, held: null }
+  if (event.kind === 'answer') return event.busy ? { shown: null, held: event.view } : { shown: event.view, held: null }
+  return event.busy ? { shown: null, held: state.held } : { shown: state.held ?? state.shown, held: null }
 }

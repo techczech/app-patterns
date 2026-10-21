@@ -72,7 +72,7 @@ The Electron adapter makes one GET through Electron's system-proxy-aware network
 The app supplies Store detection, busy detection, state storage, settings and the local notes loader. It also owns commands, platform menus, validated browser links and release checks. Store copies open their store listing and keep local What's new, while suppressing the daily switch and available-version mark. Publish the release and downloads before changing the feed; ship notes for each release and check the live feed against the published version at release time.
 
 
-## Guarded browser links (TalkWeaver-shaped host example)
+## Guarded browser links (host example)
 
 Bind the opener in main to the same fixed identity and checker. Renderer IPC supplies only a link kind and an optional version; never accept an address. The opener revalidates the feed entry on every call and opens its download or notes only for this identity. Store links come only from the configured HTTPS listing URL. Missing or mismatched versions return `false`.
 
