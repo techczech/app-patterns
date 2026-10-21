@@ -2,7 +2,7 @@
 title: "App Patterns update notices fix round 1 verification"
 kind: "evidence"
 created: "2026-10-21T00:19:40Z"
-project: "/Users/dominiklukes/gitrepos/06_apps-utilities/03_misc-utilities/app-patterns.worktrees/updates"
+project: "https://github.com/techczech/app-patterns"
 sources:
   - url: "https://github.com/techczech/app-patterns/tree/feat/updates"
 ---
