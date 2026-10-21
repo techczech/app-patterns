@@ -7,7 +7,7 @@ import {
 export const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
 /** The first check runs this long after launch, not during start-up. */
 export const FIRST_CHECK_DELAY_MS = 2 * 60 * 1000
-/** A check that fell due while presenting waits, and looks again this often. */
+/** A check that fell due while busy waits, and looks again this often. */
 export const BUSY_RETRY_MS = 20 * 1000
 /** What's new goes after this many days on which the app was opened. */
 export const WHATS_NEW_DAYS = 7
@@ -279,7 +279,7 @@ export interface WhatsNewItem { title: string | null; text: string }
 
 /**
  * The notes file for a version (`resources/whats-new/<version>.md`): bullet lines, each a plain
- * sentence, optionally starting with a bold title (`- **Presenter view.** The next two slides show.`).
+ * sentence, optionally starting with a bold title (`- **Full-screen task.** The next two steps show.`).
  * Anything else (headings, blank lines) is ignored; the text is kept as text.
  */
 export function parseWhatsNew(markdown: string): WhatsNewItem[] {
@@ -295,7 +295,7 @@ export function parseWhatsNew(markdown: string): WhatsNewItem[] {
   return items.slice(0, 12)
 }
 
-// ── The note and presenting ─────────────────────────────────────────────────────────────────────
+// ── The note and busy state ─────────────────────────────────────────────────────────────────────
 
 /** What the answer note shows and what it holds back. While the app reports itself busy nothing is shown. */
 export interface NoteState<V> { shown: V | null; held: V | null }
@@ -305,8 +305,8 @@ export type NoteEvent<V> =
   | { kind: 'dismiss' }
 
 /**
- * An answer that arrives while presenting is held and shown when presenting ends; a talk that starts
- * clears the note on screen (keeping nothing of it). Nothing is ever shown while presenting.
+ * An answer that arrives while busy is held and shown when busy ends; a busy period that starts
+ * clears the note on screen (keeping nothing of it). Nothing is ever shown while busy.
  */
 export function noteReducer<V>(state: NoteState<V>, event: NoteEvent<V>): NoteState<V> {
   if (event.kind === 'dismiss') return { shown: null, held: null }

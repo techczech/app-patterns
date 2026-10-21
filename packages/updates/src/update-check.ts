@@ -165,7 +165,7 @@ export function createUpdateChecker(deps: UpdateCheckerDeps) {
     /** Check for Updates…: always checks (a copy that may check), whatever the setting says. */
     checkNow(): Promise<UpdateSnapshot> {
       if (!mayCheck) return Promise.resolve(snapshot())
-      // No request while busy: the asking waits, and its answer is shown when the talk is over.
+      // No request while busy: the asking waits, and its answer is shown when the app is no longer busy.
       if (deps.isBusy() && !running) {
         waiting = true
         arm(BUSY_RETRY_MS)
