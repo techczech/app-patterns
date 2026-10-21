@@ -110,6 +110,8 @@ export function AccountsPane(): ReactNode {
 export function AboutPane(): ReactNode {
   const env = useEnv();
   const { appInfo, update } = env.props;
+  const richUpdate = env.props.updateCard;
+  const legacyUpdate = update;
   const count = changedFromDefault(env.ctx.state, env.ctx.schema);
   const version = `Version ${appInfo.version}${appInfo.build ? ` (build ${appInfo.build})` : ""}`;
   const sec = env.ctx.schema.section("about");
@@ -117,23 +119,24 @@ export function AboutPane(): ReactNode {
     <>
       <PaneHead icon={sec?.icon ?? "info"} title={sec?.label ?? "About"} />
       <div className={c("pscroll")}>
-        <div className={c("card")}>
+        {!richUpdate ? <div className={c("card")}>
           <div className={c("ch")}>Version</div>
           <div className={c("abouthead")}>
             <div className={c("ap")}><Icon name={appInfo.icon ?? "app-window"} /></div>
             <div className={c("grow")}><b>{appInfo.name}</b><div className={c("sub")}>{version}</div></div>
             <Btn onClick={() => env.copy(`${appInfo.name} ${version.replace("Version ", "")}`)}><Icon name="copy" />Copy version</Btn>
           </div>
-        </div>
-        {update ? (
+        </div> : null}
+        {richUpdate ? <>{richUpdate}</> : null}
+        {legacyUpdate ? (
           <div className={c("card")}>
             <div className={c("ch")}>Updates</div>
             <div className={c("row")}>
               <div className={c("lab")}>
-                <div className={cx("t", update.tone === "problem" ? "bad" : update.tone === "info" ? "info" : "okay")}><Icon name={update.tone === "problem" ? "circle-x" : update.tone === "info" ? "circle-arrow-down" : "circle-check"} />{update.text}</div>
-                {update.detail ? <div className={c("h")}>{update.detail}</div> : null}
+                <div className={cx("t", legacyUpdate.tone === "problem" ? "bad" : legacyUpdate.tone === "info" ? "info" : "okay")}><Icon name={legacyUpdate.tone === "problem" ? "circle-x" : legacyUpdate.tone === "info" ? "circle-arrow-down" : "circle-check"} />{legacyUpdate.text}</div>
+                {legacyUpdate.detail ? <div className={c("h")}>{legacyUpdate.detail}</div> : null}
               </div>
-              {env.actions.checkForUpdates ? <div className={c("ctl")}><Btn onClick={() => { void env.actions.checkForUpdates?.(); }}><Icon name="refresh-cw" />Check for updates</Btn></div> : null}
+              {appInfo.canCheckForUpdates === true && env.actions.checkForUpdates ? <div className={c("ctl")}><Btn onClick={() => { void env.run(async () => { await env.actions.checkForUpdates?.(); return { ok: true }; }); }}><Icon name="refresh-cw" />Check for updates</Btn></div> : null}
             </div>
           </div>
         ) : null}

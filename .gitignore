@@ -8,3 +8,6 @@ dist/
 # Built tarballs are ignored; releases/manifest.json is tracked.
 releases/*.tgz
 releases/.staging/
+
+# Scout serialises research receipts with a local flock file.
+research/.manifest.lock

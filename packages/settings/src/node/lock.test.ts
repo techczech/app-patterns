@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, lstatSync, readdirSync, readFileSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, renameSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { acquireLock, LockRefused, LockTimeout, pidAlive, removeLockIf } from "./lock.ts";
@@ -159,8 +159,12 @@ describe("acquireLock", () => {
     const f = join(tempDir(), "settings.json");
     const l = await acquireLock(f);
     const text = lockText(f);
-    unlinkSync(`${f}.lock`);
-    writeFileSync(`${f}.lock`, text); // same text, another file
+    const before = statSync(`${f}.lock`);
+    // Create the copy while the original still exists so the inodes cannot coincide, then replace it.
+    writeFileSync(`${f}.lock.copy`, text);
+    renameSync(`${f}.lock.copy`, `${f}.lock`); // same text, another file
+    const after = statSync(`${f}.lock`);
+    expect(after.dev === before.dev && after.ino === before.ino).toBe(false);
     expect(await l.held()).toBe(false);
     await l.release(); // not its lock: left alone
     expect(lockText(f)).toBe(text);

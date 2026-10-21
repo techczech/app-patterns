@@ -7,7 +7,7 @@
     },
     "packages/commands": {
       "name": "@app-patterns/commands",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "devDependencies": {
         "@types/bun": "^1.3.14",
         "typescript": "6.0.3",
@@ -15,7 +15,7 @@
     },
     "packages/outline": {
       "name": "@app-patterns/outline",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "@codemirror/language": "^6.12.4",
         "@codemirror/state": "^6.7.0",
@@ -30,7 +30,7 @@
     },
     "packages/settings": {
       "name": "@app-patterns/settings",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "devDependencies": {
         "@types/bun": "^1.3.14",
         "typescript": "6.0.3",
@@ -38,7 +38,7 @@
     },
     "packages/settings-electron": {
       "name": "@app-patterns/settings-electron",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "devDependencies": {
         "@app-patterns/commands": "workspace:*",
         "@app-patterns/settings": "workspace:*",
@@ -47,9 +47,9 @@
         "typescript": "6.0.3",
       },
       "peerDependencies": {
-        "@app-patterns/commands": "^0.3.0",
-        "@app-patterns/settings": "^0.3.0",
-        "@app-patterns/settings-react": "^0.3.0",
+        "@app-patterns/commands": "^0.4.0",
+        "@app-patterns/settings": "^0.4.0",
+        "@app-patterns/settings-react": "^0.4.0",
         "electron": ">=30 <43",
       },
       "optionalPeers": [
@@ -61,10 +61,12 @@
     },
     "packages/settings-react": {
       "name": "@app-patterns/settings-react",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "devDependencies": {
         "@app-patterns/commands": "workspace:*",
         "@app-patterns/settings": "workspace:*",
+        "@app-patterns/updates": "workspace:*",
+        "@app-patterns/updates-react": "workspace:*",
         "@testing-library/react": "16.3.0",
         "@types/bun": "^1.3.14",
         "@types/jsdom": "21.1.7",
@@ -77,10 +79,47 @@
         "typescript": "6.0.3",
       },
       "peerDependencies": {
-        "@app-patterns/commands": "^0.3.0",
-        "@app-patterns/settings": "^0.3.0",
+        "@app-patterns/commands": "^0.4.0",
+        "@app-patterns/settings": "^0.4.0",
+        "@app-patterns/updates": "^0.4.0",
+        "@app-patterns/updates-react": "^0.4.0",
         "lucide-react": ">=0.468.0 <2",
         "react": ">=18",
+      },
+      "optionalPeers": [
+        "@app-patterns/updates",
+        "@app-patterns/updates-react",
+      ],
+    },
+    "packages/updates": {
+      "name": "@app-patterns/updates",
+      "version": "0.4.0",
+      "devDependencies": {
+        "@types/bun": "^1.3.14",
+        "typescript": "6.0.3",
+      },
+    },
+    "packages/updates-react": {
+      "name": "@app-patterns/updates-react",
+      "version": "0.4.0",
+      "devDependencies": {
+        "@app-patterns/updates": "workspace:*",
+        "@testing-library/react": "16.3.0",
+        "@types/bun": "^1.3.14",
+        "@types/jsdom": "21.1.7",
+        "@types/react": "18.3.23",
+        "@types/react-dom": "18.3.7",
+        "jsdom": "26.1.0",
+        "lucide-react": "1.21.0",
+        "react": "18.3.1",
+        "react-dom": "18.3.1",
+        "typescript": "6.0.3",
+      },
+      "peerDependencies": {
+        "@app-patterns/updates": "^0.4.0",
+        "lucide-react": ">=0.468.0 <2",
+        "react": ">=18",
+        "react-dom": ">=18",
       },
     },
   },
@@ -94,6 +133,10 @@
     "@app-patterns/settings-electron": ["@app-patterns/settings-electron@workspace:packages/settings-electron"],
 
     "@app-patterns/settings-react": ["@app-patterns/settings-react@workspace:packages/settings-react"],
+
+    "@app-patterns/updates": ["@app-patterns/updates@workspace:packages/updates"],
+
+    "@app-patterns/updates-react": ["@app-patterns/updates-react@workspace:packages/updates-react"],
 
     "@asamuzakjp/css-color": ["@asamuzakjp/css-color@3.2.0", "", { "dependencies": { "@csstools/css-calc": "^2.1.3", "@csstools/css-color-parser": "^3.0.9", "@csstools/css-parser-algorithms": "^3.0.4", "@csstools/css-tokenizer": "^3.0.3", "lru-cache": "^10.4.3" } }, "sha512-K1A6z8tS3XsmCMM86xoWdn7Fkdn9m6RSVtocUrJYIwZnFVkng/PvkEoWtOWmP+Scc6saYWHWZYbndEEXxl24jw=="],
 

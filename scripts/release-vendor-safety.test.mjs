@@ -455,3 +455,23 @@ describe("plain App Patterns Framework peer range syntax", () => {
     });
   }
 });
+
+
+test('a Settings-only app vendors successfully without optional updates tarballs', () => {
+  const optionalSettings = {
+    ...SETTINGS,
+    peerDependencies: { ...SETTINGS.peerDependencies, '@app-patterns/updates': '^0.4.0', '@app-patterns/updates-react': '^0.4.0' },
+    peerDependenciesMeta: { '@app-patterns/updates': { optional: true }, '@app-patterns/updates-react': { optional: true } },
+  };
+  const { releasesDir, appRoot } = setup({
+    releases: [COMMANDS, optionalSettings],
+    tamper: manifest => {
+      manifest.packages[SETTINGS.name].frameworkPeers = { ...SETTINGS.peerDependencies };
+      manifest.released['app-patterns-settings-0.14.4.tgz'].frameworkPeers = { ...SETTINGS.peerDependencies };
+    },
+  });
+  vendorApp({ appRoot, releasesDir, write: true, ...quiet });
+  const app = JSON.parse(readFileSync(join(appRoot, 'package.json'), 'utf8'));
+  expect(Object.keys(app.dependencies).sort()).toEqual(['@app-patterns/commands', '@app-patterns/settings']);
+  expect(readdirSync(join(appRoot, 'vendor/app-patterns')).some(name => name.includes('updates'))).toBe(false);
+});

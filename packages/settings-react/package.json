@@ -1,20 +1,20 @@
 {
   "name": "@app-patterns/settings-react",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "license": "MIT",
   "type": "module",
   "description": "The shared Settings window for desktop apps: React components driven only by props, plus settings.css. No IPC, no Electron, no file access.",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "build:css": "mkdir -p dist && cp src/settings.css dist/settings.css",
+    "build:css": "bun run scripts/gen-css.ts --dist",
     "build": "bun run gen:css && bun run build:deps && bun run build:js && bun run build:css",
     "demo": "bun run gen:css && bun run demo/serve.ts",
     "demo:build": "bun run demo/build.ts",
     "test": "bun test",
     "check": "bun run gen:css && bun run typecheck && bun test && bun run build",
     "gen:css": "bun run scripts/gen-css.ts",
-    "build:deps": "bun run --cwd ../commands build && bun run --cwd ../settings build",
+    "build:deps": "bun run --cwd ../commands build && bun run --cwd ../settings build && bun run --cwd ../updates-react build",
     "build:js": "tsc -p tsconfig.build.json"
   },
   "exports": {
@@ -23,16 +23,23 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
-    "./settings.css": "./dist/settings.css"
+    "./settings.css": "./dist/settings.css",
+    "./updates": {
+      "types": "./dist/updates.d.ts",
+      "import": "./dist/updates.js",
+      "default": "./dist/updates.js"
+    }
   },
   "files": [
     "dist"
   ],
   "peerDependencies": {
-    "@app-patterns/commands": "^0.3.0",
-    "@app-patterns/settings": "^0.3.0",
+    "@app-patterns/commands": "^0.4.0",
+    "@app-patterns/settings": "^0.4.0",
     "lucide-react": ">=0.468.0 <2",
-    "react": ">=18"
+    "react": ">=18",
+    "@app-patterns/updates": "^0.4.0",
+    "@app-patterns/updates-react": "^0.4.0"
   },
   "devDependencies": {
     "@app-patterns/commands": "workspace:*",
@@ -46,6 +53,16 @@
     "lucide-react": "1.21.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "@app-patterns/updates": "workspace:*",
+    "@app-patterns/updates-react": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@app-patterns/updates": {
+      "optional": true
+    },
+    "@app-patterns/updates-react": {
+      "optional": true
+    }
   }
 }

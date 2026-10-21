@@ -1,0 +1,47 @@
+{
+  "name": "@app-patterns/updates-react",
+  "version": "0.4.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Quiet update marks, a release popover, local seen-notes mark and About and updates card. Controlled React components without IPC.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build:js": "tsc -p tsconfig.build.json",
+    "build:css": "mkdir -p dist && cp src/updates.css dist/updates.css",
+    "build": "bun run build:deps && bun run build:js && bun run build:css",
+    "test": "bun test",
+    "check": "bun run typecheck && bun test && bun run build",
+    "build:deps": "bun run --cwd ../updates build"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./updates.css": "./dist/updates.css"
+  },
+  "files": [
+    "dist"
+  ],
+  "peerDependencies": {
+    "@app-patterns/updates": "^0.4.0",
+    "lucide-react": ">=0.468.0 <2",
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "devDependencies": {
+    "@testing-library/react": "16.3.0",
+    "@types/bun": "^1.3.14",
+    "@types/jsdom": "21.1.7",
+    "@types/react": "18.3.23",
+    "@types/react-dom": "18.3.7",
+    "jsdom": "26.1.0",
+    "lucide-react": "1.21.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "typescript": "6.0.3",
+    "@app-patterns/updates": "workspace:*"
+  }
+}

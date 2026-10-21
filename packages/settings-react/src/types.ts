@@ -95,6 +95,8 @@ export interface AppInfo {
   name: string;
   version: string;
   build?: string;
+  /** The host explicitly declares whether a legacy update checker is installed. */
+  canCheckForUpdates?: boolean;
   /** lucide icon name for the About card. */
   icon?: string;
   /** The agent command-line name; defaults to the schema's app id. */
@@ -160,6 +162,8 @@ export interface SettingsWindowProps {
   /** Menus the app declares, so the Shortcuts inspector can say where a command sits. */
   menus?: MenuDecl<string>[];
   update?: UpdateStatus;
+  /** Optional rich About card, supplied through the /updates entry point. */
+  updateCard?: import("react").ReactNode;
   /** Changes newer than this (ms) are new: the badge, the agent highlight. Default: now, so nothing is new. */
   changesSeenAt?: number;
   /**

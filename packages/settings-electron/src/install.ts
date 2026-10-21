@@ -81,6 +81,8 @@ export interface InstallSettingsOptions<G extends string, Ctx> {
   appItems?: MenuInput<G, Ctx>["appItems"];
   /** About-card extras (`build`, `icon`, `cli`). Name and version always come from `app`. */
   appInfo?: Omit<AppInfo, "name" | "version">;
+  /** The app supplies its update checker, including Store and busy-mode rules. */
+  checkForUpdates?(): void | Promise<void>;
   /** Ids of custom pages the window may be opened at, besides the schema's sections. */
   extraSections?: string[];
   /** For a `path` setting's picker: a file or a folder (default folder). */
@@ -259,7 +261,7 @@ export function installSettingsWith<G extends string, Ctx>(electron: ElectronDep
     return {
       state: store.view(),
       slots: slotState,
-      appInfo: { ...opts.appInfo, name: appName(), version: app.getVersion() },
+      appInfo: { ...opts.appInfo, name: appName(), version: app.getVersion(), canCheckForUpdates: typeof opts.checkForUpdates === "function" },
       ...(problem ? { problem: problem.error } : {}),
     };
   };
@@ -452,6 +454,11 @@ export function installSettingsWith<G extends string, Ctx>(electron: ElectronDep
   handleOp(CHANNELS.undoBatch, 1, async (b) => {
     const id = idArg(b);
     return id === null ? null : outcomeOf(await store.undoBatch(id));
+  });
+  handleOp(CHANNELS.checkForUpdates, 0, async () => {
+    if (!opts.checkForUpdates) return { ok: false, error: MESSAGES.failed };
+    await opts.checkForUpdates();
+    return { ok: true };
   });
   handleOp(CHANNELS.export, 0, () => exportSettings());
   handle(CHANNELS.importPreview, async (...args) => {

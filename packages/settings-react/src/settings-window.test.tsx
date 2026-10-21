@@ -1,3 +1,4 @@
+import { SettingsUpdatesCard } from "./updates.tsx";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, within } from "@testing-library/react";
 import { changedFromDefault, changeCounts, searchSettings, newSince, applyImport, type ImportPreview } from "@app-patterns/settings";
@@ -1043,4 +1044,27 @@ describe("the window follows the core, not its own logic", () => {
     expect(text(container.querySelector(".bsw-code span"))).toBe("recorderexample settings set clock.darkAmber 2");
     expect(text(container.querySelector(".bsw-phead .bsw-meta"))).toBe("1 changed from default");
   });
+});
+
+test("the About Updates slot renders the shared update card", async () => {
+  const latest = { version: "1.2.0", released: "2026-10-21", summary: ["One change."], notes: "https://editor.example/notes", download: { mac: "https://editor.example/mac", windows: "https://editor.example/windows" } };
+  const snap = { identity: { appName: "Example Editor", feedUrl: "https://editor.example/updates.json" }, running: "1.1.0", platform: "darwin", source: "website" as const, enabled: true, checking: false, busy: false, waiting: false, state: { latest }, mark: latest, whatsNew: null };
+  const noop = async () => {};
+  const m = mount({ initial: { section: "about" }, updateCard: <SettingsUpdatesCard snapshot={snap} actions={ { check: async () => snap, setEnabled: noop, download: noop, notNow: noop, skip: noop, stopSkipping: noop, openNotes: noop, openStore: noop, dismissWhatsNew: noop, loadNotes: async () => null, showNotes: () => {} }} /> });
+  await flush();
+  expect(m.getByRole("switch", { name: "Check for new versions" })).not.toBeNull();
+  expect(m.getByText(/internet address/).textContent).toContain("editor.example");
+});
+
+
+test('legacy update checker requires host declaration and reports rejection visibly', async () => {
+  const m = mount({ initial: { section: 'about' }, appInfo: { name: 'Old app', version: '1.0.0', canCheckForUpdates: false } });
+  await flush();
+  expect(m.queryByRole('button', { name: 'Check for updates' })).toBeNull();
+  m.unmount();
+  const rejected = mount({ initial: { section: 'about' }, actions: { checkForUpdates: async () => { throw Error('Update service unavailable'); } } });
+  await flush();
+  fireEvent.click(rejected.getByRole('button', { name: 'Check for updates' }));
+  await flush();
+  expect(rejected.getByText('Update service unavailable')).not.toBeNull();
 });
