@@ -1,6 +1,6 @@
 {
   "name": "@app-patterns/updates-react",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -26,7 +26,7 @@
     "dist"
   ],
   "peerDependencies": {
-    "@app-patterns/updates": "^0.4.0",
+    "@app-patterns/updates": "^0.4.1",
     "lucide-react": ">=0.468.0 <2",
     "react": ">=18",
     "react-dom": ">=18"
