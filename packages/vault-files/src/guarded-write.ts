@@ -7,34 +7,37 @@
 //     that name is refused; where the opened file really landed is compared with the folder judged a
 //     moment before (a folder swapped for a link is seen and refused before a byte is written);
 //   - the file takes its name by a hard link, which fails when the name is taken; a disk without hard
-//     links falls back to "name still free, then rename".
+//     links is refused; there is no overwriting rename fallback.
 // Rewrite (an existing file, in place):
 //   - under the file's lock the new bytes are staged in a temp file beside it and fsynced;
 //   - the target is opened through one no-follow handle; its bytes are read through that handle and
 //     must hash to `expect` (the sha256 of the bytes the new text was worked out from), else nothing
 //     is written (`changed`);
 //   - the same handle is truncated, written and fsynced: the inode never changes, so a cloud client
-//     keeps the file's identity, hard links stay one file, and mode bits, ACLs and extended attributes
-//     are kept. A read-only target is refused untouched;
+//     keeps the file's identity, and mode bits, ACLs and extended attributes
+//     are kept. Read-only and multiply-linked targets are refused untouched;
 //   - a failure after truncation keeps the temp file (the only whole copy) and the error names it.
 // Every path is vault-relative; no part of it may be a link (paths.ts resolveInside); the vault root
 // is never created.
 //
-// What Node cannot close: there is no "open relative to a folder handle", so between the last check
-// and the link (create) or the truncate (rewrite) another program could still replace a part of the
-// path or rewrite the file. The rewrite re-checks the path names the same inode afterwards and
-// reports a write that may have landed elsewhere (`landed`), never as done.
+// Node has no portable openat/linkat/unlinkat. Directory and inode identities are checked before
+// and after create finalisation; detected swaps refuse success and retain the staged bytes. Cleanup
+// checks ownership synchronously before unlinking, with no JS await between the check and unlink.
+// Another OS process can still swap names between a check and a syscall (including cleanup), or
+// move a directory away and back between checks. These checks are detection, not atomic containment.
+// Likewise a hard link can be added after rewrite's last fstat and before truncate. Callers needing
+// protection against a hostile concurrent OS writer must enforce directory access outside Node.
 
 import { createHash, randomBytes } from 'node:crypto'
-import { constants } from 'node:fs'
-import { access, link, lstat, mkdir, open, realpath, rename, stat, unlink, type FileHandle } from 'node:fs/promises'
-import { basename, dirname, join, resolve } from 'node:path'
+import { constants, lstatSync, realpathSync, unlinkSync, type Stats } from 'node:fs'
+import { access, link, lstat, mkdir, open, realpath, stat, unlink, type FileHandle } from 'node:fs/promises'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { realVaultRoot, resolveInside, VaultPathRefused } from './paths.ts'
 
 export type GuardedWriteCode =
   | 'outside' | 'is-a-link' | 'exists' | 'not-a-file' | 'no-folder' | 'no-vault' | 'swapped' | 'changed' | 'read-only'
 
-/** Why a guarded write wrote nothing. `code` is stable; each app says it in its own words. */
+/** Why a guarded write was refused; a detected create swap may already have linked the new file. `code` is stable; each app says it in its own words. */
 export class GuardedWriteRefused extends Error {
   override readonly name = 'GuardedWriteRefused'
   constructor(readonly code: GuardedWriteCode, readonly path: string) {
@@ -45,7 +48,7 @@ export class GuardedWriteRefused extends Error {
       'not-a-file': `${path} is not an existing file.`,
       'no-folder': `The folder for ${path} does not exist.`,
       'no-vault': `The folder ${path} should be written into is not there.`,
-      swapped: `${path} was not written: its folder changed while it was being saved.`,
+      swapped: `${path} could not be saved safely: its folder changed while it was being saved.`,
       changed: `${path} changed since it was read, so nothing was written.`,
       'read-only': `${path} is read-only, so nothing was written.`,
     }[code])
@@ -154,6 +157,44 @@ export async function makeFolder(root: string, rel: string): Promise<string> {
   return abs
 }
 
+// A small internal seam for create finalisation and cleanup: pin the identity of every directory,
+// including the root, rather than accepting a replacement that happens to have the same real path.
+const sameFile = (a: Stats, b: Stats): boolean => a.dev === b.dev && a.ino === b.ino
+function createLocation(root: string, folder: string, rel: string) {
+  const paths = [root]
+  const suffix = relative(root, folder).split(sep).filter(Boolean)
+  for (const part of suffix) paths.push(join(paths.at(-1)!, part))
+  const directories = paths.map((path) => ({ path, info: lstatSync(path) }))
+  const check = (): void => {
+    try {
+      for (const { path, info } of directories) {
+        const now = lstatSync(path)
+        if (!now.isDirectory() || now.isSymbolicLink() || !sameFile(info, now)) throw new Error('changed directory')
+      }
+      if (realpathSync(folder) !== folder) throw new Error('redirected directory')
+    } catch { throw new GuardedWriteRefused('swapped', rel) }
+  }
+  check()
+  return {
+    check,
+    checkFile(path: string, owned: Stats): void {
+      check()
+      try {
+        const now = lstatSync(path)
+        if (!now.isFile() || !sameFile(now, owned)) throw new Error('changed file')
+      } catch { throw new GuardedWriteRefused('swapped', rel) }
+    },
+    drop(path: string, owned: Stats): boolean {
+      try {
+        this.checkFile(path, owned)
+        // No async gap in which this process can run a swap hook. The OS race remains; see above.
+        unlinkSync(path)
+        return true
+      } catch { return false }
+    },
+  }
+}
+
 export type CreateOptions = {
   /** Make missing folders above the file (inside the vault). Default false: the folder must exist. */
   makeFolders?: boolean
@@ -182,47 +223,57 @@ async function createFileNow(root: string, rel: string, content: string | Uint8A
     if (existing?.isSymbolicLink()) throw new GuardedWriteRefused('is-a-link', rel)
     if (existing) throw new GuardedWriteRefused('exists', rel)
     const folder = await realParent(abs, expected, rel)
+    const location = createLocation(realRoot, folder, rel)
     await options.seams?.betweenCheckAndWrite?.(rel)
+    location.check()
     const bytes = toBytes(content)
     const staged = join(folder, `.${basename(abs)}.${randomBytes(6).toString('hex')}${TEMP_SUFFIX}`)
     const handle = await open(staged, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, options.mode ?? 0o644)
-    let realStaged: string | null = null
+    let owned: Stats | undefined
+    let complete = false
+    let closed = false
+    let linked = false
+    const final = join(folder, basename(abs))
     try {
-      // Where did the file just opened really land? Trust nothing but the open handle.
-      const opened = await handle.stat()
-      const landed = await realpath(staged)
-      const there = await lstat(landed)
-      if (there.ino !== opened.ino || there.dev !== opened.dev) throw new GuardedWriteRefused('swapped', rel)
-      realStaged = landed
-      if (dirname(landed) !== folder) throw new GuardedWriteRefused('swapped', rel)
+      owned = await handle.stat()
+      location.checkFile(staged, owned)
+      if (owned.nlink !== 1) throw new GuardedWriteRefused('swapped', rel)
       let offset = 0
       while (offset < bytes.length) {
         const { bytesWritten } = await handle.write(bytes, offset, bytes.length - offset, offset)
         offset += bytesWritten
       }
-      await handle.sync().catch(() => {})
+      await handle.sync()
+      complete = true
+      location.checkFile(staged, owned)
+      if ((await handle.stat()).nlink !== 1) throw new GuardedWriteRefused('swapped', rel)
+      location.check()
+      // Hard link is exclusive: an unsupported filesystem fails closed. Never rename over final.
+      await link(staged, final)
+      linked = true
+      location.checkFile(final, owned)
+      location.checkFile(staged, owned)
+      await syncFolder(folder)
+      await handle.close()
+      closed = true
+      location.checkFile(final, owned)
+      if (!location.drop(staged, owned)) throw new GuardedWriteRefused('swapped', rel)
     } catch (error) {
-      await handle.close().catch(() => {})
-      await unlink(realStaged ?? staged).catch(() => {})
-      throw error
-    }
-    await handle.close()
-    const final = join(folder, basename(abs))
-    try {
-      try {
-        await link(realStaged, final)
-        await unlink(realStaged)
-      } catch (error) {
-        if (!NO_HARD_LINKS.has(errorCode(error) ?? '')) throw error
-        // No hard links on this disk (the link wrote nothing): the name is checked free, then renamed.
-        if (await lstat(final).catch(() => null)) throw new GuardedWriteRefused('exists', rel)
-        await rename(realStaged, final)
+      let failure = errorCode(error) === 'EEXIST' ? new GuardedWriteRefused('exists', rel) : error
+      // A changed path must never be used to roll back final or to unlink an unverified stage.
+      // Once link may have landed elsewhere, retain the owned inode as recovery evidence.
+      let swapped = false
+      try { location.check() } catch { swapped = true }
+      if (swapped) failure = new GuardedWriteRefused('swapped', rel)
+      if (linked || swapped || !owned || !location.drop(staged, owned)) {
+        if (failure instanceof Error) Object.assign(failure, {
+          recoveryTemp: staged, recoveryName: basename(staged), recoveryComplete: complete,
+        })
       }
-    } catch (error) {
-      await unlink(realStaged).catch(() => {})
-      throw errorCode(error) === 'EEXIST' ? new GuardedWriteRefused('exists', rel) : error
+      throw failure
+    } finally {
+      if (!closed) await handle.close().catch(() => {})
     }
-    await syncFolder(folder)
     return { path: final, sha256: sha256Hex(bytes) }
   })
 }
@@ -254,6 +305,7 @@ async function rewriteFileNow(root: string, rel: string, content: string | Uint8
     const standing = await lstat(abs).catch(() => null)
     if (standing?.isSymbolicLink()) throw new GuardedWriteRefused('is-a-link', rel)
     if (!standing?.isFile()) throw new GuardedWriteRefused('not-a-file', rel)
+    if (standing.nlink !== 1) throw new GuardedWriteRefused('changed', rel)
     try { await access(abs, constants.W_OK) } catch { throw new GuardedWriteRefused('read-only', rel) }
     const folder = await realParent(abs, expected, rel)
     const bytes = toBytes(content)
@@ -289,7 +341,7 @@ async function rewriteFileNow(root: string, rel: string, content: string | Uint8
     try {
       const st = await target.stat()
       opened = `${st.dev}:${st.ino}`
-      if (!st.isFile() || st.ino !== standing.ino || st.dev !== standing.dev) throw new GuardedWriteRefused('changed', rel)
+      if (!st.isFile() || st.nlink !== 1 || st.ino !== standing.ino || st.dev !== standing.dev) throw new GuardedWriteRefused('changed', rel)
       const current = sha256Hex(await target.readFile())
       if (current !== options.expect) throw new GuardedWriteRefused('changed', rel)
       if (current === newHash) {
@@ -297,6 +349,7 @@ async function rewriteFileNow(root: string, rel: string, content: string | Uint8
         await dropTemp()
         return { path: abs, sha256: newHash, changed: false }
       }
+      if ((await target.stat()).nlink !== 1) throw new GuardedWriteRefused('changed', rel)
       await target.truncate(0)
       truncated = true
       await options.seams?.afterTruncate?.(rel)

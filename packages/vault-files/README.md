@@ -21,3 +21,11 @@ bun test
 ```
 
 Tests run over temp folders and clean up after themselves.
+
+## Guarded-write safety
+
+New files are finalised with an exclusive hard link. Filesystems that reject hard links fail closed with the original filesystem error; there is no rename fallback. Rewrites refuse files whose link count is not one, using both the initial path check and the actual open handle, including a recheck immediately before truncation. Ordinary rewrites retain the file inode and mode.
+
+Creates recheck the identities of the root, every parent directory and the staged inode before finalisation, and check the final inode afterwards. A detected directory swap throws `GuardedWriteRefused` with code `swapped`; it is never reported as success. When cleanup cannot verify ownership, the stage is kept. The error carries `recoveryName` (the stage basename), `recoveryTemp` (its original path, which may have moved) and `recoveryComplete` (whether all new bytes were staged and synced). A final link that already succeeded is left in place as evidence, rather than risking deletion of another program's file.
+
+These checks do not provide atomic containment against a hostile concurrent OS process. Node has no portable directory-relative open, link or unlink operations. Another process can swap a directory between the final check and the syscall, or move it away and back between checks. An exclusive link cannot overwrite an existing destination, but it can create a new name outside the root before a swap is detected. Cleanup checks directory and inode identity synchronously, with no JavaScript await before unlink; an OS process can still replace a name in that interval. A hard link can also be added between the final handle link-count check and truncation. Enforce directory access separately when other OS processes are adversarial.

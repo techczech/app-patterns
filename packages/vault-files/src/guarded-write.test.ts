@@ -67,20 +67,118 @@ test('makeFolder refuses a link on the way and is fine with existing folders', a
   expect(readdirSync(outside)).toEqual([])
 })
 
-test('create on a disk without hard links checks the name free and renames', async () => {
-  const spy = spyOn(fsp, 'link').mockImplementation(async () => { throw Object.assign(new Error('not supported'), { code: 'ENOTSUP' }) })
+for (const failure of ['ENOTSUP', 'EOPNOTSUPP', 'EPERM', 'EXDEV']) {
+  test(`create fails closed on ${failure}, preserving a concurrently created foreign file`, async () => {
+    const path = join(root, 'course/nolinks.md')
+    const spy = spyOn(fsp, 'link').mockImplementation(async () => {
+      writeFileSync(path, 'foreign')
+      throw Object.assign(new Error('not supported'), { code: failure })
+    })
+    try {
+      const error = await createFile(root, 'course/nolinks.md', 'mine').catch((e) => e)
+      expect(error.code).toBe(failure)
+      expect(readFileSync(path, 'utf8')).toBe('foreign')
+      expect(spy).toHaveBeenCalledTimes(1)
+    } finally { spy.mockRestore() }
+  })
+}
+
+test('create never invokes an overwriting rename when hard links are unsupported', async () => {
+  const originalRename = fsp.rename
+  const linkSpy = spyOn(fsp, 'link').mockImplementation(async () => {
+    throw Object.assign(new Error('not supported'), { code: 'EPERM' })
+  })
+  const renameSpy = spyOn(fsp, 'rename').mockImplementation(async (source, target) => {
+    writeFileSync(String(target), 'foreign created after the last existence check')
+    return originalRename(source, target)
+  })
   try {
-    await createFile(root, 'course/nolinks.md', 'bytes')
-    expect(readFileSync(join(root, 'course/nolinks.md'), 'utf8')).toBe('bytes')
-    expect(await code(createFile(root, 'course/nolinks.md', 'again'))).toBe('exists')
-    expect(spy).toHaveBeenCalledTimes(1)
-    expect(temps(join(root, 'course'))).toEqual([])
-  } finally {
-    spy.mockRestore()
-  }
+    const error = await createFile(root, 'course/nolinks.md', 'mine').catch((e) => e)
+    expect(error.code).toBe('EPERM')
+    expect(renameSpy).not.toHaveBeenCalled()
+    expect(existsSync(join(root, 'course/nolinks.md'))).toBe(false)
+  } finally { linkSpy.mockRestore(); renameSpy.mockRestore() }
 })
 
-test('rewrite writes in place: same inode, mode kept, a hard-linked twin sees the new bytes', async () => {
+test('create detects a directory moved outside during link and keeps owned recovery bytes', async () => {
+  const originalLink = fsp.link
+  const moved = join(outside, 'moved')
+  const spy = spyOn(fsp, 'link').mockImplementation(async (source, target) => {
+    renameSync(join(root, 'course'), moved)
+    symlinkSync(moved, join(root, 'course'))
+    return originalLink(source, target)
+  })
+  try {
+    const error = await createFile(root, 'course/late.md', 'mine').catch((e) => e)
+    expect(error).toBeInstanceOf(GuardedWriteRefused)
+    expect(error.code).toBe('swapped')
+    expect(temps(moved)).toHaveLength(1)
+    expect(readFileSync(join(moved, temps(moved)[0]!), 'utf8')).toBe('mine')
+  } finally { spy.mockRestore() }
+})
+
+test('create refuses a swap during staging before attempting final link', async () => {
+  const originalOpen = fsp.open
+  const moved = join(outside, 'moved')
+  const linkSpy = spyOn(fsp, 'link')
+  const openSpy = spyOn(fsp, 'open').mockImplementation(async (path, flags, mode) => {
+    const handle = await originalOpen(path, flags, mode)
+    if (String(path).endsWith(TEMP_SUFFIX)) {
+      const sync = handle.sync.bind(handle)
+      spyOn(handle, 'sync').mockImplementation(async () => {
+        await sync()
+        renameSync(join(root, 'course'), moved)
+        symlinkSync(moved, join(root, 'course'))
+      })
+    }
+    return handle
+  })
+  try {
+    const error = await createFile(root, 'course/late.md', 'mine').catch((e) => e)
+    expect(error.code).toBe('swapped')
+    expect(linkSpy).not.toHaveBeenCalled()
+    expect(existsSync(join(moved, 'late.md'))).toBe(false)
+    expect(error.recoveryComplete).toBe(true)
+    expect(readFileSync(join(moved, error.recoveryName), 'utf8')).toBe('mine')
+  } finally { openSpy.mockRestore(); linkSpy.mockRestore() }
+})
+
+test('create never overwrites an external file when the directory swaps at link', async () => {
+  const originalLink = fsp.link
+  const moved = join(outside, 'moved')
+  const spy = spyOn(fsp, 'link').mockImplementation(async (source, target) => {
+    renameSync(join(root, 'course'), moved)
+    symlinkSync(moved, join(root, 'course'))
+    writeFileSync(join(moved, 'late.md'), 'foreign')
+    return originalLink(source, target)
+  })
+  try {
+    const error = await createFile(root, 'course/late.md', 'mine').catch((e) => e)
+    expect(error.code).toBe('swapped')
+    expect(readFileSync(join(moved, 'late.md'), 'utf8')).toBe('foreign')
+    expect(readFileSync(join(moved, error.recoveryName), 'utf8')).toBe('mine')
+  } finally { spy.mockRestore() }
+})
+
+test('create cleanup does not unlink a foreign stage through a swapped directory', async () => {
+  let foreign = ''
+  const spy = spyOn(fsp, 'link').mockImplementation(async (source, target) => {
+    const name = String(source).split('/').at(-1)!
+    renameSync(join(root, 'course'), join(outside, 'moved'))
+    mkdirSync(join(root, 'course'))
+    foreign = join(root, 'course', name)
+    writeFileSync(foreign, 'foreign')
+    throw Object.assign(new Error('link failed'), { code: 'EIO' })
+  })
+  try {
+    await expect(createFile(root, 'course/late.md', 'mine')).rejects.toThrow()
+    expect(readFileSync(foreign, 'utf8')).toBe('foreign')
+    const moved = join(outside, 'moved')
+    expect(readFileSync(join(moved, temps(moved)[0]!), 'utf8')).toBe('mine')
+  } finally { spy.mockRestore() }
+})
+
+test('rewrite writes singly-linked files in place, retaining inode and mode', async () => {
   const path = join(root, 'course/course.md')
   writeFileSync(path, 'one\n')
   chmodSync(path, 0o640)
@@ -89,10 +187,54 @@ test('rewrite writes in place: same inode, mode kept, a hard-linked twin sees th
   expect(res.changed).toBe(true)
   expect(statSync(path).ino).toBe(ino)
   expect(statSync(path).mode & 0o777).toBe(0o640)
-  linkSync(path, join(root, 'twin.md'))
-  await rewriteFile(root, 'course/course.md', 'three\n', { expect: res.sha256 })
-  expect(readFileSync(join(root, 'twin.md'), 'utf8')).toBe('three\n')
   expect(temps(join(root, 'course'))).toEqual([])
+})
+
+test('rewrite refuses an existing hard link without modifying its external alias', async () => {
+  const path = join(root, 'course/course.md')
+  const alias = join(outside, 'alias.md')
+  writeFileSync(path, 'old')
+  linkSync(path, alias)
+  expect(await code(rewriteFile(root, 'course/course.md', 'new', { expect: sha256Hex('old') }))).toBe('changed')
+  expect(readFileSync(path, 'utf8')).toBe('old')
+  expect(readFileSync(alias, 'utf8')).toBe('old')
+  expect(temps(join(root, 'course'))).toEqual([])
+})
+
+test('rewrite rechecks the opened handle for a hard link created after the path check', async () => {
+  const path = join(root, 'course/course.md')
+  const alias = join(outside, 'alias.md')
+  writeFileSync(path, 'old')
+  const result = await code(rewriteFile(root, 'course/course.md', 'new', {
+    expect: sha256Hex('old'),
+    seams: { betweenCheckAndWrite: async () => { linkSync(path, alias) } },
+  }))
+  expect(result).toBe('changed')
+  expect(readFileSync(alias, 'utf8')).toBe('old')
+  expect(temps(join(root, 'course'))).toEqual([])
+})
+
+test('rewrite rechecks link count after reading the actual handle, before truncation', async () => {
+  const path = join(root, 'course/course.md')
+  const alias = join(outside, 'alias.md')
+  writeFileSync(path, 'old')
+  const originalOpen = fsp.open
+  const spy = spyOn(fsp, 'open').mockImplementation(async (name, flags, mode) => {
+    const handle = await originalOpen(name, flags, mode)
+    if (String(name) === path) {
+      const read = handle.readFile.bind(handle)
+      spyOn(handle, 'readFile').mockImplementation((async () => {
+        const bytes = await read()
+        linkSync(path, alias)
+        return bytes
+      }) as typeof handle.readFile)
+    }
+    return handle
+  })
+  try {
+    expect(await code(rewriteFile(root, 'course/course.md', 'new', { expect: sha256Hex('old') }))).toBe('changed')
+    expect(readFileSync(alias, 'utf8')).toBe('old')
+  } finally { spy.mockRestore() }
 })
 
 test('rewrite refuses when the file changed since it was read, also between the check and the write', async () => {
