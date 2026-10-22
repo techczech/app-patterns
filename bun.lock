@@ -83,6 +83,14 @@
         "react": ">=18",
       },
     },
+    "packages/vault-files": {
+      "name": "@app-patterns/vault-files",
+      "version": "0.4.0",
+      "devDependencies": {
+        "@types/bun": "^1.3.14",
+        "typescript": "6.0.3",
+      },
+    },
   },
   "packages": {
     "@app-patterns/commands": ["@app-patterns/commands@workspace:packages/commands"],
@@ -94,6 +102,8 @@
     "@app-patterns/settings-electron": ["@app-patterns/settings-electron@workspace:packages/settings-electron"],
 
     "@app-patterns/settings-react": ["@app-patterns/settings-react@workspace:packages/settings-react"],
+
+    "@app-patterns/vault-files": ["@app-patterns/vault-files@workspace:packages/vault-files"],
 
     "@asamuzakjp/css-color": ["@asamuzakjp/css-color@3.2.0", "", { "dependencies": { "@csstools/css-calc": "^2.1.3", "@csstools/css-color-parser": "^3.0.9", "@csstools/css-parser-algorithms": "^3.0.4", "@csstools/css-tokenizer": "^3.0.3", "lru-cache": "^10.4.3" } }, "sha512-K1A6z8tS3XsmCMM86xoWdn7Fkdn9m6RSVtocUrJYIwZnFVkng/PvkEoWtOWmP+Scc6saYWHWZYbndEEXxl24jw=="],
 

@@ -9,8 +9,9 @@ Shared patterns for desktop apps, written in TypeScript. One command registry dr
 - [`@app-patterns/settings-react`](packages/settings-react/README.md) renders the Settings window from props and supplies its stylesheet.
 - [`@app-patterns/settings-electron`](packages/settings-electron/README.md) connects the settings store, window, menus, preload bridge and encrypted key slots in Electron.
 - `@app-patterns/outline` provides Markdown outline ranges and CodeMirror commands.
+- [`@app-patterns/vault-files`](packages/vault-files/README.md) keeps a folder of content files safe: guarded writes, external-change guard, watcher, cloud conflict copies, folder availability and the vault marker file (version 0.4.0).
 
-All packages are version 0.3.0. The React components require React and lucide-react; the Electron host requires Electron. See each package manifest for supported peer versions.
+All packages except `@app-patterns/vault-files` (0.4.0) are version 0.3.0. The React components require React and lucide-react; the Electron host requires Electron. See each package manifest for supported peer versions.
 
 ## Install with vendored tarballs
 
