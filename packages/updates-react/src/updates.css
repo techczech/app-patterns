@@ -1,0 +1,41 @@
+/* Shared update notices. */
+.apu-update-mark { display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 7px; border-radius: 9px; border: 1px solid color-mix(in srgb, var(--app-updates-green, #177a3a) 30%, var(--app-updates-line, #d9d0c1)); background: color-mix(in srgb, var(--app-updates-green, #177a3a) 9%, transparent); color: var(--app-updates-green, #177a3a); font: inherit; font-size: 11px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.apu-update-mark--updated { border-color: color-mix(in srgb, var(--app-updates-oxford, #0b3a6b) 30%, var(--app-updates-line, #d9d0c1)); background: color-mix(in srgb, var(--app-updates-oxford, #0b3a6b) 7%, transparent); color: var(--app-updates-oxford, #0b3a6b); }
+.apu-update-mark:hover { background: color-mix(in srgb, var(--app-updates-green, #177a3a) 16%, transparent); }
+.apu-update-mark--updated:hover { background: color-mix(in srgb, var(--app-updates-oxford, #0b3a6b) 14%, transparent); }
+.apu-update-anchor { position: relative; display: inline-flex; align-items: center; }
+.apu-update-pop { z-index: 1500; width: 380px; max-width: 90vw; padding: 14px 16px; border: 1px solid var(--app-updates-line, #d9d0c1); border-radius: 10px; background: var(--app-updates-panel, #fffdf8); box-shadow: 0 10px 34px #17202a2e; color: var(--app-updates-ink, #17202a); font-size: 12.5px; line-height: 1.45; white-space: normal; text-align: left; user-select: text; }
+.apu-update-pop h3 { margin: 0 0 2px; font-size: 14px; font-weight: 700; }
+.apu-update-pop .apu-update-sub { color: var(--app-updates-muted, #5d6875); font-size: 12px; margin-bottom: 8px; }
+.apu-update-pop ul { margin: 0 0 12px; padding-left: 18px; }
+.apu-update-pop li { margin: 2px 0; }
+.apu-update-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.apu-update-btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--app-updates-line, #d9d0c1); background: var(--app-updates-panel, #fffdf8); color: var(--app-updates-ink, #17202a); font: inherit; font-size: 12.5px; cursor: pointer; }
+.apu-update-btn:hover { background: var(--app-updates-hover, #ede8dc); }
+.apu-update-btn--primary { background: var(--app-updates-oxford, #0b3a6b); border-color: var(--app-updates-oxford, #0b3a6b); color: #fff; font-weight: 600; }
+.apu-update-btn--primary:hover { background: color-mix(in srgb, var(--app-updates-oxford, #0b3a6b) 88%, black); }
+.apu-update-btn--quiet { border-color: transparent; background: transparent; color: var(--app-updates-muted, #5d6875); }
+.apu-update-foot { margin-top: 10px; color: var(--app-updates-faint, #8a9099); font-size: 11.5px; }
+.apu-update-link { color: var(--app-updates-muted, #5d6875); background: none; border: 0; padding: 0; font: inherit; text-decoration: underline; cursor: pointer; }
+.apu-update-note { position: fixed; right: 16px; bottom: 36px; z-index: 2000; width: 330px; max-width: 90vw; padding: 10px 12px 10px 14px; border: 1px solid var(--app-updates-line, #d9d0c1); border-left: 4px solid var(--amber); border-radius: 8px; background: var(--app-updates-panel, #fffdf8); box-shadow: 0 8px 30px #17202a33; color: var(--app-updates-ink, #17202a); font-size: 12.5px; line-height: 1.45; }
+.apu-update-note--good { border-left-color: var(--app-updates-green, #177a3a); }
+.apu-update-note--new { border-left-color: var(--app-updates-green, #177a3a); }
+.apu-update-note--store { border-left-color: var(--app-updates-oxford, #0b3a6b); }
+.apu-update-note--plain { border-left-color: var(--app-updates-faint, #8a9099); }
+.apu-update-note-title { font-weight: 700; margin-bottom: 2px; }
+.apu-update-note-detail { color: var(--app-updates-muted, #5d6875); }
+.apu-update-note .apu-update-actions { margin-top: 8px; }
+.apu-update-note-close { position: absolute; top: 4px; right: 6px; border: 0; background: none; color: var(--app-updates-faint, #8a9099); font-size: 15px; line-height: 1; cursor: pointer; }
+.apu-update-state--good { color: var(--app-updates-green, #177a3a); }
+.apu-update-state--new { color: var(--app-updates-green, #177a3a); }
+.apu-update-state--warn { color: var(--amber); }
+.pane--whats-new { padding: 16px 18px; overflow: auto; background: var(--app-updates-panel, #fffdf8); height: 100%; box-sizing: border-box; }
+.pane--whats-new h2 { margin: 0 0 2px; font-size: 16px; }
+.pane--whats-new .apu-update-sub { color: var(--app-updates-muted, #5d6875); font-size: 12px; margin-bottom: 12px; }
+.pane--whats-new dt { font-weight: 700; font-size: 13px; margin-top: 12px; }
+.pane--whats-new dd { margin: 2px 0 0; color: var(--app-updates-ink, #17202a); font-size: 13px; line-height: 1.45; }
+
+.apu-update-switch { width: 32px; height: 18px; border-radius: 10px; border: 1px solid #9ca3af; background: #d1d5db; cursor: pointer; position: relative; flex-shrink: 0; }
+.apu-update-switch::after { content: ''; position: absolute; width: 12px; height: 12px; top: 2px; left: 2px; border-radius: 50%; background: white; }
+.apu-update-switch[aria-checked="true"] { background: #0b3a6b; }
+.apu-update-switch[aria-checked="true"]::after { left: 16px; }

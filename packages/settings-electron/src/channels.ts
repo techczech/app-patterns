@@ -14,6 +14,7 @@ export const CHANNEL_PREFIX = "bridle-settings:";
 export const CHANNELS = {
   // renderer → main (invoke)
   view: `${CHANNEL_PREFIX}view`,
+  checkForUpdates: `${CHANNEL_PREFIX}checkForUpdates`,
   set: `${CHANNEL_PREFIX}set`,
   rebind: `${CHANNEL_PREFIX}rebind`,
   rebindMany: `${CHANNEL_PREFIX}rebindMany`,

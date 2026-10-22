@@ -1,9 +1,18 @@
 # Changelog
 
-## 0.4.0: @app-patterns/vault-files (2026-10-22)
+## @app-patterns/vault-files 0.4.1 — 2026-10-22
 
-- Added `@app-patterns/vault-files` 0.4.0: guarded create and in-place rewrite, external-change guard, watch router with own-write suppression by path and hash, cloud conflict copies for any file name, folder availability, the vault marker file and machine names. Extracted from TalkWeaver and WriteFlex; first consumer LearnWeaver (library folder).
-- Other packages unchanged at 0.3.0.
+- Added shared guarded create and in-place rewrite, external-change checks, file watching, cloud conflict-copy handling, folder availability and vault marker files, extracted from TalkWeaver and WriteFlex.
+- Refuse overwriting rename fallbacks and multiply linked rewrites. Check directory and inode identity around writes, preserve recovery bytes after detected swaps, and document the remaining pathname race intervals.
+- Preserve the original 0.4.0 package and record the checked 0.4.1 package separately.
+
+## 0.4.1 — 2026-10-21
+
+- Re-issued 0.4.0 as 0.4.1 with all seven packages kept aligned. The packed 0.4.0 files in `releases/` predate the review fixes below and were never published; they stay in place unchanged.
+- Update notices: guards added and Settings integration made optional.
+- Updates: the public API uses a neutral busy state.
+- Updates: comments and wording made neutral.
+- Settings: the lock test creates its impostor copy while the original exists, so it is reliable on Linux.
 
 ## 0.3.0 — 2026-10-20
 

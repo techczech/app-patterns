@@ -27,7 +27,7 @@ export function mount(over: Omit<Partial<SettingsWindowProps>, "actions"> & { ac
   const { actions: actionOverrides, ...props } = over;
   const { actions, calls } = recordingActions(actionOverrides);
   const full: SettingsWindowProps = {
-    schema: wfSchema, state: wfState(), registry: wfRegistry, appInfo: { name: "Example Editor", version: "0.31.4", build: "2810", icon: "pen-line" },
+    schema: wfSchema, state: wfState(), registry: wfRegistry, appInfo: { canCheckForUpdates: true, name: "Example Editor", version: "0.31.4", build: "2810", icon: "pen-line" },
     slots: wfSlots(), rowHints: wfHints, menus: wfMenus, commandHelp: wfCommandHelp, now: NOW, actions,
     showCommand: (d) => !FRAME_COMMANDS.has(d.id) && !d.hidden,
     update: { text: "Example Editor is up to date", detail: "Last checked today at 09:41." },

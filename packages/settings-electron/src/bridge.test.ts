@@ -107,3 +107,9 @@ describe("createSettingsBridge", () => {
     expect(Object.values(CHANNELS).filter((c) => /secret/i.test(c)).sort()).toEqual([CHANNELS.removeSecret, CHANNELS.setSecret].sort());
   });
 });
+
+test("checkForUpdates invokes its dedicated channel without arguments", async () => {
+  const { ipc, calls } = fakeIpc();
+  await createSettingsBridge(ipc).checkForUpdates();
+  expect(calls).toEqual([{ channel: CHANNELS.checkForUpdates, args: [] }]);
+});
