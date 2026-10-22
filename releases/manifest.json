@@ -77,14 +77,14 @@
       "packedAt": "2026-10-21T08:04:12.337Z"
     },
     "@app-patterns/vault-files": {
-      "version": "0.4.1",
-      "file": "app-patterns-vault-files-0.4.1.tgz",
-      "integrity": "sha512-A39qha9ZxD7yPRcP9W3m+OoRqVvJ7NFz3dtJBHpXR2WMdDGX3Efo+MIbvDdjxg6oVzAZr8J7FXSW7UX7sIaCPg==",
-      "contentsDigest": "sha256-qAUO3kWuYDFC5FZLI3pIrcGFpqU4zd/gq8kLxB4gNGs=",
+      "version": "0.4.2",
+      "file": "app-patterns-vault-files-0.4.2.tgz",
+      "integrity": "sha512-3iLemvb23LlIqVDdQaMEKIUyWtj2zPYJykFAwFwoZkOOi9mP+PoW9SxGpe3u0WufcMGm5zLVEGTUf7Yx615cxQ==",
+      "contentsDigest": "sha256-OtLGprqY911tvKb+xj4RaSm9vTcRafkbKHqIZqI9ynQ=",
       "frameworkPeers": {},
-      "commit": "0ddb657658dcae9be7ca06e79df50cd68c06cf7e",
+      "commit": "cf172bda6d169454cfdf7ad347db82b82def3daf",
       "commitDirty": false,
-      "packedAt": "2026-10-22T19:19:39.875Z"
+      "packedAt": "2026-10-22T19:28:30.905Z"
     }
   },
   "released": {
@@ -276,6 +276,15 @@
       "commit": "0ddb657658dcae9be7ca06e79df50cd68c06cf7e",
       "commitDirty": false,
       "packedAt": "2026-10-22T19:19:39.875Z"
+    },
+    "app-patterns-vault-files-0.4.2.tgz": {
+      "name": "@app-patterns/vault-files",
+      "version": "0.4.2",
+      "integrity": "sha512-3iLemvb23LlIqVDdQaMEKIUyWtj2zPYJykFAwFwoZkOOi9mP+PoW9SxGpe3u0WufcMGm5zLVEGTUf7Yx615cxQ==",
+      "contentsDigest": "sha256-OtLGprqY911tvKb+xj4RaSm9vTcRafkbKHqIZqI9ynQ=",
+      "commit": "cf172bda6d169454cfdf7ad347db82b82def3daf",
+      "commitDirty": false,
+      "packedAt": "2026-10-22T19:28:30.905Z"
     }
   }
 }
