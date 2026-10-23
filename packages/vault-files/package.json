@@ -1,0 +1,30 @@
+{
+  "name": "@app-patterns/vault-files",
+  "version": "0.4.2",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "File safety for apps whose content is a folder of files: guarded create and rewrite, external-change guard, watcher router, cloud conflict copies, folder availability and marker files.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build:js": "bun build ./src/index.ts --outdir dist --target node --format esm --packages external",
+    "build:types": "tsc -p tsconfig.build.json",
+    "build": "bun run build:js && bun run build:types",
+    "test": "bun test",
+    "check": "bun run typecheck && bun test && bun run build"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "6.0.3"
+  }
+}
