@@ -47,6 +47,17 @@ the native save and open panels belong to the host.
   `<cli> settings rebind <command> <chord>` and `<cli> settings reset-shortcut <command>`. **These two CLI verbs do not exist yet**
   (pending in `@app-patterns/settings`'s CLI); leave the prop off until they do.
 
+## Shortcut conflicts
+
+Swap and Replace each preview their complete batch through the pure Settings `rebindMany` operation.
+An invalid action is disabled with the resolver's explanation; a valid alternative remains available.
+For example, swapping Settings' default `⌘,` with Refresh's `⌘R` is refused because `⌘,` stays reserved for Settings.
+Replace remains available, and swaps between custom, unreserved chords still work.
+
+The `registry` prop must return the rejection list from `resolveBindings`, as `defineRegistry` already does.
+Previews leave the current state and host actions untouched and re-evaluate when the host supplies changed bindings.
+The store validates again when the chosen action runs.
+
 ## Copied commands
 
 Every dynamic part of a copied command (setting key, value, slot id, batch id, command id, file name) goes through one

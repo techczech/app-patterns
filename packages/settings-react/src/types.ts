@@ -1,6 +1,6 @@
 /** Props and callbacks of the Settings window. Everything the window knows arrives as props; everything it does leaves through `actions`. */
 import type { MenuDecl, RebindCheck } from "@app-patterns/commands";
-import type { ChangeFilter, ImportPreview, Schema, SettingsState, SettingValue } from "@app-patterns/settings";
+import type { ChangeFilter, ImportPreview, RegistryLike, Schema, SettingsState, SettingValue } from "@app-patterns/settings";
 
 /** What an action returns. An `OpResult` from the core fits as it is; the host may also return `{ ok: true }`. */
 /** `batch` on a success is the id of the batch the operation wrote (an `OpResult` carries it); `importApply` should return it so the window can open the import. */
@@ -20,7 +20,8 @@ export interface SettingsRegistry {
     noMenu?: true;
   }[];
   byId(id: string): { id: string; group: string; label: string; key: string } | undefined;
-  resolveBindings(overrides?: Record<string, string>): { bindings: Record<string, string> };
+  /** Includes rejections so conflict previews use the same whole-set validation as Settings operations. */
+  resolveBindings: RegistryLike<RebindCheck>["resolveBindings"];
   commandForChord(bindings: Record<string, string>, chord: string): string | null;
   checkRebind(bindings: Record<string, string>, id: string, chord: string): RebindCheck;
   rebindMessage(check: RebindCheck, chord: string): string;

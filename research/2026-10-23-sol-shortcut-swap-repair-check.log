@@ -1,0 +1,1221 @@
+
+==> @app-patterns/commands (build)
+Bundled 6 modules in 2ms
+
+  index.js  16.31 KB  (entry point)
+
+
+==> @app-patterns/outline (build)
+Bundled 3 modules in 3ms
+
+  index.js  33.31 KB  (entry point)
+
+
+==> @app-patterns/settings (build)
+Bundled 18 modules in 3ms
+
+  index.js            3.1 KB    (entry point)
+  index-tveshzgx.js   45.1 KB   (chunk)
+  node/index.js       56.72 KB  (entry point)
+
+
+==> @app-patterns/updates (build)
+Bundled 6 modules in 4ms
+
+  index.js           17.29 KB  (entry point)
+  index-1b6na6es.js  5.80 KB   (chunk)
+  electron.js        3.0 KB    (entry point)
+
+
+==> @app-patterns/updates-react (build)
+Bundled 6 modules in 2ms
+
+  index.js           17.29 KB  (entry point)
+  index-1b6na6es.js  5.80 KB   (chunk)
+  electron.js        3.0 KB    (entry point)
+
+
+==> @app-patterns/settings-react (build)
+Bundled 6 modules in 2ms
+
+  index.js  16.31 KB  (entry point)
+
+Bundled 18 modules in 4ms
+
+  index.js            3.1 KB    (entry point)
+  index-tveshzgx.js   45.1 KB   (chunk)
+  node/index.js       56.72 KB  (entry point)
+
+Bundled 6 modules in 2ms
+
+  index.js           17.29 KB  (entry point)
+  index-1b6na6es.js  5.80 KB   (chunk)
+  electron.js        3.0 KB    (entry point)
+
+
+==> @app-patterns/settings-electron (build)
+Bundled 8 modules in 3ms
+
+  index.js           0.62 KB    (entry point)
+  index-68dt72tk.js  28.58 KB   (chunk)
+  index-bcmrghf9.js  2.55 KB    (chunk)
+  main.js            1.38 KB    (entry point)
+  preload.js         348 bytes  (entry point)
+
+
+==> @app-patterns/commands (check)
+bun test v1.3.10 (30e609e0)
+Bundled 6 modules in 2ms
+
+  index.js  16.31 KB  (entry point)
+
+
+==> @app-patterns/outline (check)
+bun test v1.3.10 (30e609e0)
+Bundled 3 modules in 2ms
+
+  index.js  33.31 KB  (entry point)
+
+
+==> @app-patterns/settings (check)
+bun test v1.3.10 (30e609e0)
+Bundled 18 modules in 3ms
+
+  index.js            3.1 KB    (entry point)
+  index-tveshzgx.js   45.1 KB   (chunk)
+  node/index.js       56.72 KB  (entry point)
+
+
+==> @app-patterns/updates (check)
+bun test v1.3.10 (30e609e0)
+Bundled 6 modules in 2ms
+
+  index.js           17.29 KB  (entry point)
+  index-1b6na6es.js  5.80 KB   (chunk)
+  electron.js        3.0 KB    (entry point)
+
+
+==> @app-patterns/updates-react (check)
+bun test v1.3.10 (30e609e0)
+Bundled 6 modules in 2ms
+
+  index.js           17.29 KB  (entry point)
+  index-1b6na6es.js  5.80 KB   (chunk)
+  electron.js        3.0 KB    (entry point)
+
+
+==> @app-patterns/settings-react (check)
+bun test v1.3.10 (30e609e0)
+Bundled 6 modules in 2ms
+
+  index.js  16.31 KB  (entry point)
+
+Bundled 18 modules in 4ms
+
+  index.js            3.1 KB    (entry point)
+  index-tveshzgx.js   45.1 KB   (chunk)
+  node/index.js       56.72 KB  (entry point)
+
+Bundled 6 modules in 3ms
+
+  index.js           17.29 KB  (entry point)
+  index-1b6na6es.js  5.80 KB   (chunk)
+  electron.js        3.0 KB    (entry point)
+
+
+==> @app-patterns/settings-electron (check)
+Bundled 6 modules in 2ms
+
+  index.js  16.31 KB  (entry point)
+
+Bundled 18 modules in 3ms
+
+  index.js            3.1 KB    (entry point)
+  index-tveshzgx.js   45.1 KB   (chunk)
+  node/index.js       56.72 KB  (entry point)
+
+Bundled 6 modules in 3ms
+
+  index.js  16.31 KB  (entry point)
+
+Bundled 18 modules in 3ms
+
+  index.js            3.1 KB    (entry point)
+  index-tveshzgx.js   45.1 KB   (chunk)
+  node/index.js       56.72 KB  (entry point)
+
+Bundled 6 modules in 3ms
+
+  index.js           17.29 KB  (entry point)
+  index-1b6na6es.js  5.80 KB   (chunk)
+  electron.js        3.0 KB    (entry point)
+
+bun test v1.3.10 (30e609e0)
+Bundled 8 modules in 3ms
+
+  index.js           0.62 KB    (entry point)
+  index-68dt72tk.js  28.58 KB   (chunk)
+  index-bcmrghf9.js  2.55 KB    (chunk)
+  main.js            1.38 KB    (entry point)
+  preload.js         348 bytes  (entry point)
+
+bun test v1.3.10 (30e609e0)
+
+==> a (check)
+
+==> b (check)
+
+==> a (check)
+
+$ bun run build && bun run scripts/run-workspaces.mjs check && bun test scripts
+$ bun run scripts/run-workspaces.mjs build
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts --outdir dist --target node --format esm --packages external
+$ tsc -p tsconfig.build.json
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts --outdir dist --target browser --format esm --packages external
+$ tsc -p tsconfig.build.json
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/node/index.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+$ tsc -p tsconfig.build.json
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/electron.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+$ tsc -p tsconfig.build.json
+$ bun run build:deps && bun run build:js && bun run build:css
+$ bun run --cwd ../updates build
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/electron.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+$ tsc -p tsconfig.build.json
+$ tsc -p tsconfig.build.json
+$ mkdir -p dist && cp src/updates.css dist/updates.css
+$ bun run gen:css && bun run build:deps && bun run build:js && bun run build:css
+$ bun run scripts/gen-css.ts
+$ bun run --cwd ../commands build && bun run --cwd ../settings build && bun run --cwd ../updates-react build
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts --outdir dist --target node --format esm --packages external
+$ tsc -p tsconfig.build.json
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/node/index.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+$ tsc -p tsconfig.build.json
+$ bun run build:deps && bun run build:js && bun run build:css
+$ bun run --cwd ../updates build
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/electron.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+$ tsc -p tsconfig.build.json
+$ tsc -p tsconfig.build.json
+$ mkdir -p dist && cp src/updates.css dist/updates.css
+$ tsc -p tsconfig.build.json
+$ bun run scripts/gen-css.ts --dist
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/main.ts ./src/preload.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+$ tsc -p tsconfig.build.json
+$ bun run typecheck && bun test && bun run build
+$ tsc -p tsconfig.json
+
+src/menu-template.test.ts:
+(pass) menu coverage > finds nothing uncovered when every non-noMenu group is declared [0.17ms]
+(pass) menu coverage > lists the commands of an undeclared group, never noMenu or frame commands [0.15ms]
+(pass) menu coverage > build refuses an uncovered command, an unknown group and a group in two menus [0.40ms]
+(pass) menu template > has the fixed frame in order [0.26ms]
+(pass) menu template > lands every non-noMenu command exactly once, and runs it [0.23ms]
+(pass) menu template > shows the chord but never registers it [0.09ms]
+(pass) menu template > follows a rebinding and shows no accelerator for a removed shortcut or a bare key [0.16ms]
+(pass) menu template > adds declared Edit and Help groups and app items to the frame menus [0.11ms]
+(pass) menu template > frame commands are always present, even in a registry that does not mention them [0.11ms]
+(pass) menu template > an app cannot rekey a frame command, only relabel it [0.05ms]
+(pass) menu template > items follow availability when a context is given, and are all enabled without one [0.19ms]
+(pass) menu template > a throwing availability check disables the item and never throws out of the build [0.13ms]
+(pass) menu template > two menus with one label are refused [0.07ms]
+(pass) menu template > a function-key binding keeps its accelerator in the menu [0.07ms]
+(pass) estate overrides reach generated menu accelerators without losing availability or coverage [0.10ms]
+
+src/chords.test.ts:
+(pass) chords > names a key press by its physical key and the modifiers in fixed order [0.06ms]
+(pass) chords > gives no chord for a modifier on its own [0.04ms]
+(pass) chords > writes one spelling per chord [0.01ms]
+(pass) chords > accepts only chords that cannot be mistaken for typing [0.02ms]
+(pass) chords > maps chords to Electron accelerators [0.03ms]
+(pass) chords > gives a valid accelerator for an unmodified key of every family [0.07ms]
+(pass) chord grammar > accepts modifiers in order plus one supported key [0.02ms]
+(pass) chord grammar > refuses control characters, unknown keys, two keys, repeated or misordered modifiers and non-strings [0.03ms]
+(pass) chord grammar > covers every chord a key press can make and every default in a registry [0.04ms]
+
+src/registry.test.ts:
+(pass) registry definition > has unique ids, canonical chords and no two commands on one default chord [0.25ms]
+(pass) registry definition > refuses defects at definition time [0.34ms]
+(pass) registry definition > carries the estate and system reserved sets [0.03ms]
+(pass) bindings > resolve a chord to its command and follow overrides [0.04ms]
+(pass) bindings > ignore an override of a fixed command [0.06ms]
+(pass) bindings > know only typing commands may run while typing [0.01ms]
+(pass) rebinding outcomes > ok and same [0.04ms]
+(pass) rebinding outcomes > taken names the holder [0.03ms]
+(pass) rebinding outcomes > reserved estate, system and fixed chords are refused [0.03ms]
+(pass) rebinding outcomes > fixed commands and unknown ids cannot be rebound [0.01ms]
+(pass) rebinding outcomes > bare and invalid
+(pass) rebinding outcomes > an ok outcome applied leaves no collision [0.02ms]
+(pass) palette and cheat sheet > palette lists all but hidden, with the reason a command is unavailable [0.24ms]
+(pass) palette and cheat sheet > palette filters by every word in the label or group [0.08ms]
+(pass) palette and cheat sheet > cheat sheet groups commands that have a chord, follows overrides, skips hidden [0.08ms]
+(pass) effective bindings from saved overrides > an override on a reserved chord is dropped, the default kept, and reported [0.04ms]
+(pass) effective bindings from saved overrides > an override that collides is dropped and no chord has two holders
+(pass) effective bindings from saved overrides > an override onto another command's untouched default is refused [0.07ms]
+(pass) effective bindings from saved overrides > two commands can swap chords [0.02ms]
+(pass) effective bindings from saved overrides > invalid, bare, unknown and fixed overrides are reported; nothing throws [0.05ms]
+(pass) effective bindings from saved overrides > a removed shortcut is not a rejection [0.02ms]
+(pass) effective bindings from saved overrides > ids from outside never reach inherited properties [0.11ms]
+(pass) hostile saved values > a modifier-only or blank-but-not-empty override is invalid and keeps the default; only exactly empty removes [0.04ms]
+(pass) hostile saved values > reporting never throws on arbitrary JSON [0.77ms]
+(pass) definitions are copied > changing the caller's array or objects afterwards does not change the registry [0.07ms]
+(pass) scopes > the same default chord is allowed in different scopes, rejected within one [0.11ms]
+(pass) scopes > reserved chords stay reserved in a named scope; a scope named global is refused [0.04ms]
+(pass) scopes > bare overrides are accepted for scoped commands only [0.02ms]
+(pass) scopes > collisions are checked within a scope; a scoped chord may shadow a global one [0.11ms]
+(pass) scopes > a typing command cannot take a bare override [0.09ms]
+(pass) scopes > scope is validated for unbound commands too, and one rule serves rebind and lookup [0.15ms]
+(pass) rebindable estate defaults > all nine estate bindings move, survive saved overrides and return to their own default [0.31ms]
+(pass) rebindable estate defaults > freed default chords keep their meanings in every scope, even for fixed intruders [0.24ms]
+(pass) rebindable estate defaults > non-fixed estate defaults may claim their meaning only with opt-in, and collisions still refuse [0.09ms]
+(pass) rebindable estate defaults > legacy callers and explicitly fixed non-estate commands keep fixed behaviour [0.08ms]
+(pass) platform binding restrictions > refuses ⌘⌃⌥⇧R at definition, rebind and saved override boundaries [0.03ms]
+(pass) platform binding restrictions > refuses ⌃← at definition, rebind and saved override boundaries [0.06ms]
+(pass) platform binding restrictions > refuses ⌃→ at definition, rebind and saved override boundaries [0.04ms]
+(pass) platform binding restrictions > refuses ⌃↑ at definition, rebind and saved override boundaries [0.02ms]
+(pass) platform binding restrictions > refuses ⌃↓ at definition, rebind and saved override boundaries [0.02ms]
+(pass) platform binding restrictions > keeps Control+Command structural arrows and their subtree variants available [0.21ms]
+
+src/key-dispatch.test.ts:
+(pass) key dispatch > runs every command on its own default chord when nothing has focus [0.18ms]
+(pass) key dispatch > inside a text field runs only commands the registry allows while typing [0.08ms]
+(pass) key dispatch > follows a rebinding and drops the old chord [0.06ms]
+(pass) key dispatch > leaves Return to a focused button; an open overlay lets only the overlay commands through [0.02ms]
+(pass) key dispatch > ignores a key with no command or a lone modifier [0.03ms]
+(pass) key dispatch > a scoped chord shadows the global one only while its scope is active [0.11ms]
+(pass) key dispatch > a bare chord never runs inside a text field, even for a typing command [0.07ms]
+(pass) rebound estate shortcuts drive the event path while typing and with an overlay open [0.13ms]
+
+ 73 pass
+ 0 fail
+ 567 expect() calls
+Ran 73 tests across 4 files. [16.00ms]
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts --outdir dist --target node --format esm --packages external
+$ tsc -p tsconfig.build.json
+$ bun run typecheck && bun test && bun run build
+$ tsc -p tsconfig.json
+
+src/commands.test.ts:
+(pass) move block > a paragraph crosses a heading and the inverse restores byte-identical text [1.43ms]
+(pass) move block > a paragraph at the end of the document is a consumed no-op [0.28ms]
+(pass) move block > a heading moves as one line and leaves its body behind [0.05ms]
+(pass) move block > a list item moves alone past its child and re-parents that child [0.06ms]
+(pass) move block > a list item does not move out of its list into unrelated prose [0.13ms]
+(pass) move block > a fenced block is opaque to block movement [0.08ms]
+(pass) the outline package exposes movement with the current subtree
+(pass) move with subtree > a heading takes its body and subheadings [0.05ms]
+(pass) move with subtree > body text moves its enclosing section [0.15ms]
+(pass) move with subtree > a list item takes its descendants [0.11ms]
+(pass) move with subtree > block up never crosses front matter [0.07ms]
+(pass) move with subtree > block down never crosses front matter [0.02ms]
+(pass) move with subtree > subtree up never crosses front matter [0.11ms]
+(pass) move with subtree > subtree down never crosses front matter [0.03ms]
+(pass) move with subtree > a fenced hash is not a section boundary [0.06ms]
+(pass) change level > raise current heading line changes exactly the claimed markers in one transaction [0.01ms]
+(pass) change level > raise current heading line round-trips byte-identically with its inverse [0.17ms]
+(pass) change level > lower current heading line changes exactly the claimed markers in one transaction [0.08ms]
+(pass) change level > lower current heading line round-trips byte-identically with its inverse [0.06ms]
+(pass) change level > raise heading subtree changes exactly the claimed markers in one transaction [0.12ms]
+(pass) change level > raise heading subtree round-trips byte-identically with its inverse [0.07ms]
+(pass) change level > lower heading subtree changes exactly the claimed markers in one transaction [0.03ms]
+(pass) change level > lower heading subtree round-trips byte-identically with its inverse [0.07ms]
+(pass) change level > line-only list lowering does not touch descendants [0.07ms]
+(pass) change level > list subtree lowering and raising preserve mixed indentation byte-for-byte [0.08ms]
+(pass) change level > setext heading levels change without converting their text or normalising whitespace [0.10ms]
+(pass) change level > raise line leaves front matter and fenced markers untouched [0.03ms]
+(pass) change level > lower line leaves front matter and fenced markers untouched [0.08ms]
+(pass) change level > raise subtree leaves front matter and fenced markers untouched [0.04ms]
+(pass) change level > lower subtree leaves front matter and fenced markers untouched [0.01ms]
+(pass) change level > a subtree level change is wholly rejected when any heading would exceed level six [0.03ms]
+(pass) make heading > sets an existing heading to the explicit level and preserves all other bytes [0.23ms]
+(pass) make heading > turns a list item into an explicit level-six heading [0.14ms]
+(pass) make heading > turns a quote line into an explicit heading [0.09ms]
+(pass) make heading > explicit heading level is a consumed no-op inside a fenced code block [0.02ms]
+(pass) make heading > uses the surrounding heading level and strips combined quote/list markers [0.06ms]
+(pass) make heading > uses one level deeper and ignores heading-looking fenced code [0.01ms]
+(pass) make heading > replaces a setext underline as part of the same undoable change [0.11ms]
+(pass) make heading > surrounding-level variant is a consumed no-op inside front matter and fences [0.01ms]
+(pass) make heading > one-deeper variant is a consumed no-op inside front matter and fences [0.03ms]
+(pass) heading navigation > next jumps to setext and ATX headings while skipping front matter and fences [0.07ms]
+(pass) heading navigation > previous is the exact inverse of next for the text and caret [0.07ms]
+(pass) heading navigation > previous and next at their respective edges are consumed no-ops [0.02ms]
+(pass) section commands > select current section selects the heading and body in one transaction [0.03ms]
+(pass) section commands > delete current section removes exactly that range in one invertible transaction [0.14ms]
+(pass) section commands > section commands ignore front matter and fenced fake headings [0.04ms]
+(pass) list indentation > indent renumbers the joined and departed ordered runs [0.46ms]
+(pass) list indentation > outdent renumbers the joined and departed ordered runs [0.07ms]
+(pass) list indentation > indent joins an existing child run after deeper items [0.01ms]
+(pass) list indentation > outdent leaves an existing child run and rejoins its parent run [0.02ms]
+(pass) list indentation > outdent starts a new outer run at one when no outer sibling precedes it [0.05ms]
+(pass) list indentation > indent rejoins the nested run from the derived outdent example [0.03ms]
+(pass) list indentation > a departed ordered run keeps its authored start number [0.06ms]
+(pass) list indentation > renumbering preserves each ordered item's delimiter
+(pass) list indentation > bullet indentation changes only subtree whitespace [0.05ms]
+(pass) list indentation > ordered parents renumber while moved bullet children keep their markers [0.07ms]
+(pass) list indentation > a moved item's ordered children keep their own numbering [0.06ms]
+(pass) list indentation > an unrelated ordered list remains byte-identical [0.09ms]
+(pass) list indentation > indent contains a marker-only item to its own line [0.06ms]
+(pass) list indentation > indent leaves a separate nested list below a marker-only item byte-identical [0.05ms]
+(pass) list indentation > outdent leaves a separate nested list below a marker-only item byte-identical [0.03ms]
+(pass) list indentation > indent changes a list item and descendants in one transaction, then outdent restores bytes [0.01ms]
+(pass) list indentation > outdent changes only the selected nested subtree, then indent restores bytes [0.07ms]
+(pass) list indentation > indent changes every partially selected sibling and preserves the selection [0.14ms]
+(pass) list indentation > indent changes selected items at different depths with each subtree [0.05ms]
+(pass) list indentation > indent moves a selected parent and its selected child only once [0.02ms]
+(pass) list indentation > outdent changes every selected sibling and preserves the selection [0.09ms]
+(pass) list indentation > outdent at the outermost level returns false without dispatching
+(pass) list indentation > indent changes a first item even without a preceding sibling [0.03ms]
+(pass) list indentation > indent changes an already nested item with no preceding sibling [0.02ms]
+(pass) list indentation > indent returns false without dispatching outside a real list [0.02ms]
+(pass) list indentation > outdent returns false without dispatching outside a real list [0.04ms]
+(pass) state commands remain directly usable as view commands [0.02ms]
+
+src/movement-events.test.ts:
+(pass) movement through a focused editor key event > a blank-separated top-level section moves down and back up byte-identically [28.90ms]
+(pass) movement through a focused editor key event > a subsection moves down after destination prose and before its first subheading [6.30ms]
+(pass) movement through a focused editor key event > a subsection moves down to the end of a destination with no subheading [4.04ms]
+(pass) movement through a focused editor key event > a subsection moved down into final destination prose adds no trailing newline [3.42ms]
+(pass) movement through a focused editor key event > a subsection moved down before a following section keeps its separator there [3.26ms]
+(pass) movement through a focused editor key event > a subsection moves up into the previous parent and keeps its heading level [3.28ms]
+(pass) movement through a focused editor key event > crossing subsection moves round-trip byte-identically in both orders [5.65ms]
+(pass) movement through a focused editor key event > a subsection moved down then up round-trips with no trailing newline [3.01ms]
+(pass) movement through a focused editor key event > a subsection moved up then down round-trips with no trailing newline [4.13ms]
+(pass) movement through a focused editor key event > a subsection moved down then up round-trips with exactly one trailing newline [2.72ms]
+(pass) movement through a focused editor key event > a subsection moved up then down round-trips with exactly one trailing newline [3.33ms]
+(pass) movement through a focused editor key event > empty destinations and destinations whose first child has no preceding prose use the heading boundary [4.34ms]
+(pass) movement through a focused editor key event > sections at document edges are consumed no-ops [3.01ms]
+(pass) movement through a focused editor key event > a moved section carries all of its subsections [6.56ms]
+(pass) movement through a focused editor key event > shifted list movement still takes descendants [3.32ms]
+(pass) movement through a focused editor key event > a list subtree crosses down after destination prose without absorbing its sibling subtree [3.20ms]
+(pass) movement through a focused editor key event > a list subtree moved down into final destination prose adds no trailing newline [2.28ms]
+(pass) movement through a focused editor key event > a list subtree moved down then up round-trips with no trailing newline [3.44ms]
+(pass) movement through a focused editor key event > a list subtree moved up then down round-trips with no trailing newline [2.60ms]
+(pass) movement through a focused editor key event > a list subtree moved down then up round-trips with exactly one trailing newline [2.66ms]
+(pass) movement through a focused editor key event > a list subtree moved up then down round-trips with exactly one trailing newline [2.76ms]
+(pass) movement through a focused editor key event > unshifted paragraph movement still crosses a heading [3.01ms]
+(pass) movement through a focused editor key event > front matter and fenced hashes never become movement boundaries [3.18ms]
+(pass) movement through a focused editor key event > a setext heading remains one two-line block [2.18ms]
+
+src/ranges.test.ts:
+(pass) getNodeRange > classifies an ATX heading as its section through the next same-or-shallower heading [0.13ms]
+(pass) getNodeRange > recognises setext headings and consecutive headings of changing depth [0.03ms]
+(pass) getNodeRange > treats a marker-only list item after another list item as its own list block [0.02ms]
+(pass) getNodeRange > still recognises hyphen and equals setext headings after paragraph content [0.01ms]
+(pass) getNodeRange > classifies a nested list item with mixed tab and space indentation as one subtree [0.04ms]
+(pass) getNodeRange > classifies a continuation line as part of its containing list item [0.02ms]
+(pass) getNodeRange > returns a whole paragraph block rather than a single wrapped line [0.03ms]
+(pass) getNodeRange > treats a fenced code block as one opaque paragraph block [0.06ms]
+(pass) getNodeRange > preserves a final block when the text has no trailing newline [0.02ms]
+(pass) getSectionRange > finds the containing section from its body and handles a heading with no body [0.02ms]
+(pass) getSectionRange > ignores heading-shaped lines inside fences in both boundary directions [0.03ms]
+(pass) getSectionRange > returns null inside YAML front matter [0.01ms]
+
+ 109 pass
+ 0 fail
+ 356 expect() calls
+Ran 109 tests across 3 files. [291.00ms]
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts --outdir dist --target browser --format esm --packages external
+$ tsc -p tsconfig.build.json
+$ bun run typecheck && bun test && bun run build
+$ tsc -p tsconfig.json
+
+src/transfer.test.ts:
+(pass) loadState is tolerant > round-trips its own file [1.85ms]
+(pass) loadState is tolerant > an invalid field falls back to its default and logs INVALID_SAVED_VALUE without the value [0.76ms]
+(pass) loadState is tolerant > bad shortcuts, bad changelog entries and wrong shapes are dropped field by field [0.32ms]
+(pass) loadState is tolerant > no file, not a settings file, another app, a newer version [0.23ms]
+(pass) loadState is tolerant > migrate maps a legacy file into one app-update batch [0.13ms]
+(pass) export > has the v1 shape and never a secret [0.31ms]
+(pass) import > preview counts equal what apply writes, skipped settings are listed, already-matching ones counted [0.99ms]
+(pass) import > one setting imported is still a batch; Undo import restores exact prior values; each entry resets on its own [0.31ms]
+(pass) import > refused: unparsable, wrong format, other app, newer version [0.64ms]
+(pass) import > skips unknown keys, secrets, invalid values, unknown commands and refused chords [0.11ms]
+(pass) import > a swap in the file is judged against the file's other chords [0.10ms]
+(pass) importable: false > is skipped with the reason "not importable", even when the value already matches, and never applied [0.08ms]
+(pass) importable: false > canApply still skips with its own reason; export still writes the setting [0.20ms]
+(pass) importable: false > import history from before the upgrade never writes an imported value to it; the user's own earlier value may come back [0.35ms]
+(pass) importable: false > each entry records where both its values came from, and the origin survives the changelog cap [60.81ms]
+(pass) importable: false > a value the user typed again after an import is theirs: resetting or undoing a later import puts it back [0.18ms]
+(pass) importable: false > origins read back from the file; an entry without them (an older file) counts as unknown and is never put back into the setting [0.17ms]
+(pass) importable: false > a schema with a non-boolean importable is a programming mistake [0.17ms]
+
+src/pure-entry.test.ts:
+(pass) the pure entry > imports no node: module and no package, directly or through its own modules [0.56ms]
+(pass) the pure entry > the node entry is a separate subpath export [0.04ms]
+
+src/safety.test.ts:
+(pass) a secret cannot enter through the shortcut map > import skips it, rebind refuses it, export and load drop it
+(pass) the loader rebuilds history from known fields > drops entries about a secret and unknown properties at every level [0.37ms]
+(pass) shortcut sets are judged whole > a swap survives a reload [0.04ms]
+(pass) shortcut sets are judged whole > resetting one side of a swap is refused: the default chord would collide [0.29ms]
+(pass) shortcut sets are judged whole > partial undo judges the shortcuts it restores against what is really kept [0.22ms]
+(pass) shortcut sets are judged whole > a preview offers only shortcuts the whole set accepts, so applying it succeeds [0.18ms]
+(pass) import metadata is bounded so the batch survives reload > a 201-character unknown key in the file [0.02ms]
+(pass) undo keeps a setting touched since, whatever its value now > 16 → 18 imported, then 20, then 18 again [0.12ms]
+(pass) the changelog cap holds for one batch too > an operation that would log more than the cap changes nothing [4.72ms]
+(pass) the changelog cap holds for one batch too > the loader drops an oversized batch whole and says so [0.32ms]
+
+src/commands-adapter.test.ts:
+(pass) commandsAdapter > answers isCommand and defaultChord from the registry, frame commands included [0.05ms]
+(pass) commandsAdapter > resolves a whole set and words each rejection as the registry does [0.34ms]
+(pass) commandsAdapter > drives the core's operations: a swap stands and survives a reload, a collision is refused in words [0.16ms]
+(pass) shared estate and platform contracts through Settings > keeps valid saved and migrated estate overrides through load and rebind [0.18ms]
+(pass) shared estate and platform contracts through Settings > imports accepted estate bindings and skips platform conflicts with specific reasons [0.27ms]
+
+src/load-recovery.test.ts:
+(pass) a saved batch is measured before any entry is filtered > 300 valid entries and one about a secret: the batch of 301 goes whole [0.14ms]
+(pass) a saved batch is measured before any entry is filtered > 300 valid entries and one malformed: the batch of 301 goes whole [0.19ms]
+(pass) a saved batch is measured before any entry is filtered > a batch of exactly the cap is kept [0.27ms]
+(pass) shortcut recovery keeps a maximal subset, deterministic by input order > load keeps the Rename/Pin swap and drops Insert link [0.14ms]
+(pass) shortcut recovery keeps a maximal subset, deterministic by input order > import previews the swap and skips Insert link [0.13ms]
+(pass) the loader's record of what it did is never pushed out by the cap > a dropped batch of 301 and 300 invalid toggles: the marker and one summary are kept [0.48ms]
+(pass) the loader's record of what it did is never pushed out by the cap > the loader's entries push out the oldest history, never its own [0.20ms]
+(pass) the loader's record of what it did is never pushed out by the cap > twenty invalid values of a kind are logged one by one [0.06ms]
+(pass) a repair summary names what it repaired, so undo keeps the repair > 20 repairs: undo of the older batch keeps the repaired value [0.20ms]
+(pass) a repair summary names what it repaired, so undo keeps the repair > 21 repairs: undo of the older batch keeps the repaired value [0.11ms]
+(pass) a repair summary names what it repaired, so undo keeps the repair > targets survive reload; non-strings, unknown keys and secrets are dropped [0.07ms]
+(pass) a load that leaves anything out is lossy > a file exactly as written, in any property order, is not [0.08ms]
+(pass) a load that leaves anything out is lossy > every kind of drop or change is, whatever it is named [0.13ms]
+(pass) a load that leaves anything out is lossy > a huge array is compared without overflowing the stack [9.39ms]
+
+src/secret-changes.test.ts:
+(pass) recordSecret > logs one entry with who and status words, and changes no setting [0.12ms]
+(pass) recordSecret > refuses anything but a secret setting and the two status words [0.08ms]
+(pass) recordSecret > survives a reload; an entry about a secret holding anything else is still dropped [0.12ms]
+(pass) recordSecret > Reset of such an entry is refused: a key cannot be put back from the list [0.03ms]
+
+src/operations.test.ts:
+(pass) every schema key round-trips set / reset / changelog > appearance.theme [0.35ms]
+(pass) every schema key round-trips set / reset / changelog > editor.proseSize [0.08ms]
+(pass) every schema key round-trips set / reset / changelog > editor.focusMode [0.04ms]
+(pass) every schema key round-trips set / reset / changelog > readAloud.skipPrefix [0.11ms]
+(pass) every schema key round-trips set / reset / changelog > library.folder [0.13ms]
+(pass) every schema key round-trips set / reset / changelog > shortcuts.globalHotkey [0.04ms]
+(pass) every schema key round-trips set / reset / changelog > a secret is never stored, set or reset [0.07ms]
+(pass) every schema key round-trips set / reset / changelog > invalid values are refused with a reason [0.04ms]
+(pass) every schema key round-trips set / reset / changelog > formatValue speaks the user's words [0.07ms]
+(pass) every schema key round-trips set / reset / changelog > defineSchema refuses programming mistakes and orders sections [0.11ms]
+(pass) shortcuts > rebind logs the effective chords and keeps only overrides [0.14ms]
+(pass) shortcuts > the injected validator refuses reserved and taken chords; unknown commands are refused [0.01ms]
+(pass) shortcuts > Swap is one batch judged against the other's new chord [0.04ms]
+(pass) reset section, reset all, reset entry > changedFromDefault gives the counts the confirms name [0.18ms]
+(pass) reset section, reset all, reset entry > resetSection resets only that section, in one batch [0.21ms]
+(pass) reset section, reset all, reset entry > resetAll writes as many entries as the count, and nothing is left [0.03ms]
+(pass) reset section, reset all, reset entry > resetEntry puts the earlier value back as a new entry naming the one it reset [0.32ms]
+(pass) reset section, reset all, reset entry > a shortcut whose earlier chord is now taken cannot be reset [0.06ms]
+(pass) undoBatch > restores exact prior values and is itself one batch [0.23ms]
+(pass) undoBatch > a setting changed again since keeps its later value and is listed [0.21ms]
+(pass) changelog cap > keeps 300 newest and never splits a batch [0.41ms]
+(pass) changelog cap > a batch larger than the cap is never kept [0.13ms]
+(pass) changelog cap > operations apply the cap [73.57ms]
+(pass) queries for the frames > filter counts, filters, new since, batch [1.01ms]
+(pass) queries for the frames > search covers label, help, group and section label, in sidebar order [0.18ms]
+
+src/node/before-write.test.ts:
+(pass) SettingsStore: beforeWrite > a rejected write leaves the file untouched and gives the caller the reason [8.54ms]
+(pass) SettingsStore: beforeWrite > sees the whole proposal once per write, frozen, for every store route and the CLI [40.59ms]
+(pass) SettingsStore: beforeWrite > the CLI refuses with exit 2 and the reason, and writes nothing [2.64ms]
+(pass) SettingsStore: beforeWrite > a throw or a promise refuses the write (fails closed) and is logged [5.00ms]
+(pass) SettingsStore: beforeWrite > judges a migration as the app update; a rejected migration leaves the legacy file as it is [6.13ms]
+(pass) SettingsStore: beforeWrite > does not judge the loader's pure repairs: an invalid saved value is put back to default whatever the rule says [3.26ms]
+(pass) SettingsStore: beforeWrite > a refused change still lets the loader's pure repair through, unjudged: the rule cannot keep a bad value or a secret on disk [3.20ms]
+(pass) SettingsStore: beforeWrite > a refused change on a file whose only fault is a stray secret still drops the secret, unjudged [3.20ms]
+(pass) SettingsStore: beforeWrite > a refused change still writes out an entry about a secret with a malformed origin, unjudged [3.79ms]
+(pass) SettingsStore: beforeWrite > a refused change still writes out an entry about a secret with a bad batch, unjudged [3.09ms]
+(pass) SettingsStore: beforeWrite > a refused change still writes out an entry about a secret with a bad note, unjudged [3.00ms]
+(pass) SettingsStore: beforeWrite > a refused change still writes out a kept status entry with an extra field, unjudged [2.86ms]
+(pass) SettingsStore: beforeWrite > a refused change still writes out an entry nested in a list, unjudged [2.81ms]
+(pass) SettingsStore: beforeWrite > a refused change still writes out a secret nested under an unknown setting, unjudged [2.93ms]
+(pass) SettingsStore: beforeWrite > a refused change still writes out a secret nested under an unknown shortcut, unjudged [2.74ms]
+(pass) SettingsStore: beforeWrite > a refused change still writes out a secret under an unknown name, unjudged [3.18ms]
+(pass) SettingsStore: beforeWrite > a refused change still writes out a secret in an unknown top-level field, unjudged [3.11ms]
+(pass) SettingsStore: beforeWrite > a file found at open with a 150,000-element changelog of junk: the store opens and the file is repaired [31.73ms]
+(pass) SettingsStore: beforeWrite > a refused change leaves a clean file byte for byte as it was [3.16ms]
+(pass) SettingsStore: beforeWrite on a legacy file > a refused change ends the write: a legacy file put in place under an open store is not migrated by it, and the rule runs once [4.81ms]
+(pass) SettingsStore: beforeWrite on a legacy file > a migration of only defaults, with no changelog entries, is still judged and, refused, not written [2.48ms]
+(pass) SettingsStore: beforeWrite on a legacy file > a refused migration is never shown: the view is the defaults with no history, problem() says why, and a reload keeps it so [6.48ms]
+(pass) SettingsStore: beforeWrite on a legacy file > the CLI's get on a refused migration prints the default, not the migrated path, and says why on stderr (exit 0) [5.70ms]
+(pass) SettingsStore: who app-update > a store opened as the app update logs app-update entries that read back, and the rule sees that actor [8.32ms]
+
+src/node/settings-file.test.ts:
+(pass) SettingsFile: the lock at commit > a holder that lost the lock before its commit writes nothing, and runs the update again once the lock is free [178.32ms]
+(pass) SettingsFile: the lock at commit > gives up with `locked` when the lock stays taken after it was lost [320.68ms]
+(pass) SettingsFile: a folder swapped for a link > refuses the write when the folder is swapped before the commit, and touches nothing outside [3.69ms]
+(pass) SettingsFile: a folder swapped for a link > detects a swap inside the commit (after the last check) and reports the write refused [3.48ms]
+(pass) SettingsFile: folder fsync > ignores a platform that cannot fsync a folder, and fails on a real fsync error [0.28ms]
+(pass) SettingsFile: folder fsync > reports the update unwritten when the folder fsync fails with EIO [3.20ms]
+(pass) SettingsFile: fix round 2 > a delayed breaker that moved a fresh lock aside never makes its owner's stale read count: no update is lost [7.08ms]
+(pass) SettingsFile: fix round 2 > refuses to set a damaged file aside through a folder swapped for a link after the read, and moves nothing outside [2.71ms]
+(pass) SettingsFile: fix round 2 > refuses to set a damaged file aside when the folder was replaced by another real folder at the same path [1.69ms]
+(pass) SettingsFile: fix round 3 (the guard is the last await before every change to the folder) > a folder swapped while the archive name is chosen: the damaged file's rename is refused and nothing outside moves [2.09ms]
+(pass) SettingsFile: fix round 3 (the guard is the last await before every change to the folder) > a folder swapped during the update's function: no temporary file is ever created outside, and the write is refused [2.03ms]
+(pass) SettingsFile: fix round 3 (the guard is the last await before every change to the folder) > a holder evicted after its temporary file is written (the last step before the commit) writes nothing and runs again [193.46ms]
+(pass) SettingsFile: fix round 4 > an update refused because settings.json became a link releases its lock: the next save, once the file is plain again, succeeds [6.28ms]
+(pass) SettingsFile: fix round 4 > the sweep removes lock-metadata and moved-lock temporary files a dead process left [16.72ms]
+
+src/node/chord-arg.test.ts:
+(pass) parseChordArg: words or symbols, in the window's spelling [0.31ms]
+
+src/node/lock.test.ts:
+(pass) acquireLock > creates <file>.lock with pid, time, nonce and host, and removes it on release [1.67ms]
+(pass) acquireLock > makes a second taker wait until the first releases [110.83ms]
+(pass) acquireLock > recovers a dead process's lock at once [14.44ms]
+(pass) acquireLock > never removes a live process's lock within the 30 s lease; times out instead [300.45ms]
+(pass) acquireLock > recovers a live pid's lock after the lease (a crashed writer's pid reused by another process) [157.13ms]
+(pass) acquireLock > judges a lock whose text does not parse by the lease alone [162.74ms]
+(pass) acquireLock > never exists without its metadata: every read of the lock parses, while many take and release it [145.49ms]
+(pass) acquireLock > two breakers racing: the late one removes the fresh lock it moved and never puts it back; the fresh owner learns it lost it [10.44ms]
+(pass) acquireLock > when a third lock is taken while a breaker has the fresh one aside, the fresh lock's owner learns it lost the lock [1.75ms]
+(pass) acquireLock > an evicted holder sees it no longer holds the lock [2.14ms]
+(pass) acquireLock > held() needs the very file it linked: a copy with the same nonce does not count [1.15ms]
+(pass) acquireLock > lets only one of many waiters break a stale lock; each then holds it alone [88.21ms]
+(pass) acquireLock > a guard that refuses: the lock creates, links and moves nothing [1.09ms]
+
+src/node/cross-process.test.ts:
+(pass) two processes writing at once (invariant 4) > 2 processes × 200 interleaved sets on their own keys and one shared key lose nothing [2020.06ms]
+
+src/node/settings-store.test.ts:
+(pass) SettingsStore: file > persists settings, shortcuts and the changelog across stores, in a private file with no temporary file left [6.96ms]
+(pass) SettingsStore: file > re-reads under the lock: a store with a stale view never overwrites a newer file [7.49ms]
+(pass) SettingsStore: file > logs nothing and writes nothing for a value already in place [4.66ms]
+(pass) SettingsStore: file > a damaged file is set aside as .damaged-<timestamp>, defaults load, one entry is logged [6.78ms]
+(pass) SettingsStore: file > treats a file over 1 MB as damaged [3.87ms]
+(pass) SettingsStore: file > writes back the loader's repairs once (an invalid saved value) [122.37ms]
+(pass) SettingsStore: file > runs the app's migrate hook on a legacy file and writes the result as v2 [3.56ms]
+(pass) SettingsStore: file > never reads through a symlinked file and never replaces it [0.52ms]
+(pass) SettingsStore: file > refuses a settings folder that is a symlink [0.31ms]
+(pass) SettingsStore: file > refuses a settings folder outside the root it was given [0.39ms]
+(pass) SettingsStore: file > leaves another app's file, or a newer version's, as it is and refuses changes [21.32ms]
+(pass) SettingsStore: file > refuses changes once quitting has begun [1.26ms]
+(pass) SettingsStore: file > reports a lock held past the wait in plain words, and changes nothing [212.36ms]
+(pass) SettingsStore: file > drops the oldest history, never a batch, to keep the file under its size cap [60.67ms]
+(pass) SettingsStore: file > runs undo and import through the lock, attributed to who the store acts for [5.09ms]
+(pass) SettingsStore: secrets > purges a secret found in the file, refuses to set one, and never exports one [5.01ms]
+(pass) SettingsStore: watch > reflects a CLI change within 1 s, once [362.98ms]
+(pass) SettingsStore: watch > sees a file replaced by rename (a new inode), and an in-place rewrite [288.98ms]
+(pass) SettingsStore: watch > watches a folder that did not exist yet (first run) [175.01ms]
+(pass) SettingsStore: watch > is not starved by a stream of outside writes [514.42ms]
+(pass) SettingsStore: watch > does not call onChange again for its own write [359.84ms]
+(pass) SettingsStore: fix round 1 > writes back a migrated file even when the migration yields only defaults (no legacy secret stays on disk) [4.59ms]
+(pass) SettingsStore: fix round 1 > refuses to write, and keeps the original, when a damaged file cannot be set aside [21.21ms]
+(pass) SettingsStore: fix round 1 > treats a literal null, or a top level that is not an object, as damaged [14.95ms]
+(pass) SettingsStore: fix round 1 > sets a damaged file aside private (0600) and keeps only the 3 newest [13.73ms]
+(pass) SettingsStore: fix round 1 > removes a temporary file left by a writer that died mid-write [12.54ms]
+(pass) SettingsStore: watch while opening > sees an outside change made just after the first read (before the old code started watching) [313.10ms]
+(pass) SettingsStore: fix round 2 > a damaged file set aside before the holder lost the lock: the retry still writes the defaults and the damage entry [184.27ms]
+(pass) SettingsStore: keys in the changelog > recordSecret writes one entry with who and status words to the file, and nothing else [9.10ms]
+
+src/node/cli.test.ts:
+(pass) settings CLI > list: every setting with its value; secrets marked, never a value [6.01ms]
+(pass) settings CLI > set and get: logged who agent, with the name from --agent or BRIDLE_AGENT [14.30ms]
+(pass) settings CLI > refuses bad input with exit 2 and changes nothing [8.24ms]
+(pass) settings CLI > bounds the agent name [6.73ms]
+(pass) settings CLI > refuses to set a secret, points to Accounts and keys, and never echoes the value [3.54ms]
+(pass) settings CLI > reset: one key, a section, or all (all needs --yes, exit 3 without) [29.08ms]
+(pass) settings CLI > changes: newest first, with --limit [30.32ms]
+(pass) settings CLI > export writes a file without secrets and never over an existing one; import previews (exit 3), applies with --yes, and undo-import reverses it [29.65ms]
+(pass) settings CLI > import refuses another app's file, a non-export and a missing file with exit 2 [3.93ms]
+(pass) settings CLI > exits 4 with a plain message when the file stays locked for 5 s [5115.08ms]
+(pass) settings CLI > exits 1 when the settings file cannot be written (another app's file) [4.41ms]
+(pass) settings CLI: fix round 1 > undo-import of a batch whose every setting changed again since is not possible (exit 2), not a save failure [11.56ms]
+(pass) settings CLI: fix round 1 > read verbs on a refused file exit 1 and print no value; with --json the error is only in the JSON [6.31ms]
+(pass) settings CLI: fix round 1 > takes the output mode from parsed options only: `--` ends options [5.98ms]
+(pass) settings CLI: fix round 1 > escapes control characters from the file in text output [6.68ms]
+(pass) settings CLI: fix round 2 > a damaged file that cannot be set aside: every verb, reads included, exits 1 and prints no value [32.72ms]
+(pass) settings CLI: fix round 2 > rebind: sets a user chord through the same whole-set check; a reserved or taken chord fails and writes nothing [33.63ms]
+(pass) settings CLI: fix round 2 > reset-shortcut: one command, or --all after confirmation [25.97ms]
+(pass) CLI shares estate rebinding and platform refusal through the registry adapter [11.17ms]
+
+ 179 pass
+ 0 fail
+ 4872 expect() calls
+Ran 179 tests across 14 files. [12.24s]
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/node/index.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+$ tsc -p tsconfig.build.json
+$ bun run typecheck && bun test && bun run build
+$ tsc -p tsconfig.json
+
+src/electron.test.ts:
+(pass) one GET uses an isolated non-persistent session, no cookies or redirects, and a fixed app name [0.64ms]
+(pass) the read cap aborts oversized responses and redirects are never followed [0.14ms]
+(pass) a timeout aborts the request without persisting a response [0.05ms]
+
+src/updates.test.ts:
+(pass) feed and version seam > accepts only a whole valid same-site release feed [0.77ms]
+(pass) feed and version seam > compares prereleases below their public release, and orders versions [0.04ms]
+(pass) feed and version seam > builds a bare fixed-identity request and refuses query strings and credentials [0.06ms]
+(pass) feed and version seam > persisted feed entries are revalidated for this app [0.12ms]
+(pass) checker and state seam > delays the first check, checks daily and skips a recent successful check [4.25ms]
+(pass) checker and state seam > Store and development copies never fetch, even manually [0.12ms]
+(pass) checker and state seam > busy checks wait, then run when the app becomes idle [2.34ms]
+(pass) checker and state seam > manual checking works with daily checking off [1.29ms]
+(pass) checker and state seam > skip affects one version and Not now ends at the next successful check [0.23ms]
+(pass) checker and state seam > all four deliberate answers use injected app and Store names [0.14ms]
+(pass) checker and state seam > notes are offered after upgrades and legacy adoption, not first install or downgrades; clicking clears the mark [0.07ms]
+(pass) subscribers see checking start and simultaneous checks share one request [0.07ms]
+(pass) entering busy mode immediately after asking never starts a request while busy [0.05ms]
+(pass) unsafe schemes are rejected in every feed link [0.10ms]
+(pass) Mac copy facts distinguish Apple silicon and Intel [0.15ms]
+(pass) guarded opener binds identity, validates stored feed and never accepts caller URLs [0.35ms]
+(pass) answer note busy state > holds answers while busy and shows them when the busy period ends [0.03ms]
+(pass) answer note busy state > clears a visible answer when busy starts and shows idle answers immediately [0.02ms]
+
+ 21 pass
+ 0 fail
+ 96 expect() calls
+Ran 21 tests across 2 files. [19.00ms]
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/electron.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+$ tsc -p tsconfig.build.json
+$ bun run typecheck && bun test && bun run build
+$ tsc -p tsconfig.json
+
+src/updates-react.test.tsx:
+(pass) the status mark opens a popover with Download, Not now and Skip this version [64.33ms]
+(pass) busy and Store copies show no available mark [3.18ms]
+(pass) clicking What’s new marks it seen and opens only injected local notes [5.87ms]
+(pass) the Settings card exposes the privacy statement, daily switch, and manual check [14.33ms]
+(pass) the Store Settings card has no daily switch and opens the injected Store [8.85ms]
+(pass) the Settings card never claims success for a deferred busy check [8.28ms]
+
+ 6 pass
+ 0 fail
+ 13 expect() calls
+Ran 6 tests across 1 file. [361.00ms]
+$ bun run build:deps && bun run build:js && bun run build:css
+$ bun run --cwd ../updates build
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/electron.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+$ tsc -p tsconfig.build.json
+$ tsc -p tsconfig.build.json
+$ mkdir -p dist && cp src/updates.css dist/updates.css
+$ bun run gen:css && bun run typecheck && bun test && bun run build
+$ bun run scripts/gen-css.ts
+$ tsc -p tsconfig.json
+
+src/settings-window.test.tsx:
+(pass) every page renders > each settings section shows exactly its schema's rows, grouped in cards [88.28ms]
+(pass) every page renders > the sidebar lists shared sections under All apps, own sections under the app name, Changes and About at the foot [9.68ms]
+(pass) every page renders > General ends with the Settings file card and its two buttons [12.79ms]
+(pass) every page renders > a shared section with no settings and no custom page is left out of the sidebar, and a link to it opens General [9.21ms]
+(pass) every page renders > a custom page appears in the sidebar and renders its own content [13.25ms]
+Warning: An update to SettingsWindow inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at SettingsWindow (/Users/dominiklukes/gitrepos/06_apps-utilities/03_misc-utilities/app-patterns/packages/settings-react/src/settings-window.tsx:130:15)
+(pass) every page renders > row controls: toggle, popup choice, segmented, text, number, path, chord, secret [23.82ms]
+(pass) every page renders > a disabled row says why and cannot be changed [10.88ms]
+(pass) every page renders > a path that is not on this Mac shows the missing state, and Choose… asks the host [14.87ms]
+(pass) every page renders > a chord setting is recorded in place [15.10ms]
+Warning: An update to SettingsWindow inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at SettingsWindow (/Users/dominiklukes/gitrepos/06_apps-utilities/03_misc-utilities/app-patterns/packages/settings-react/src/settings-window.tsx:130:15)
+(pass) a number that is typed wrong > shows the reason and the value still in use, and writes nothing [18.51ms]
+Warning: An update to SettingsWindow inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at SettingsWindow (/Users/dominiklukes/gitrepos/06_apps-utilities/03_misc-utilities/app-patterns/packages/settings-react/src/settings-window.tsx:130:15)
+(pass) a number is stepped from what is typed > ArrowUp steps from the typed value when it is a number: saved 1.25, step 0.25, typed 2 gives 2.25 [21.67ms]
+Warning: An update to SettingsWindow inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at SettingsWindow (/Users/dominiklukes/gitrepos/06_apps-utilities/03_misc-utilities/app-patterns/packages/settings-react/src/settings-window.tsx:130:15)
+(pass) a number is stepped from what is typed > stepping to the saved value still shows it: saved 1.25, step 0.25, typed 1, ArrowUp shows 1.25, blur writes nothing, ArrowUp writes 1.5 [16.06ms]
+(pass) a number is stepped from what is typed > a step back while an earlier save is still pending is written: saved 1.25, ArrowUp (pending), ArrowDown, both resolve, field ends at 1.25 [20.71ms]
+Warning: An update to SettingsWindow inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at SettingsWindow (/Users/dominiklukes/gitrepos/06_apps-utilities/03_misc-utilities/app-patterns/packages/settings-react/src/settings-window.tsx:130:15)
+(pass) a number is stepped from what is typed > a typed value equal to the saved one is written while an up-step is pending: saved 1.25, ArrowUp (pending 1.5), type 1.25, blur, resolve gives writes 1.5 then 1.25 [26.85ms]
+Warning: An update to SettingsWindow inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at SettingsWindow (/Users/dominiklukes/gitrepos/06_apps-utilities/03_misc-utilities/app-patterns/packages/settings-react/src/settings-window.tsx:130:15)
+(pass) a number is stepped from what is typed > a saved value that arrives from outside is the new baseline: request 1.5 pending, host saves 1.5 then 2, user types 1.5 and blurs, writes 1.5 again [26.42ms]
+Warning: An update to SettingsWindow inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at SettingsWindow (/Users/dominiklukes/gitrepos/06_apps-utilities/03_misc-utilities/app-patterns/packages/settings-react/src/settings-window.tsx:130:15)
+(pass) a number is stepped from what is typed > a request that fails does not block the next commit: saved 1.25, ArrowUp fails, type 1.5 and blur writes 1.5 again [19.14ms]
+Warning: An update to SettingsWindow inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at SettingsWindow (/Users/dominiklukes/gitrepos/06_apps-utilities/03_misc-utilities/app-patterns/packages/settings-react/src/settings-window.tsx:130:15)
+(pass) a number is stepped from what is typed > text that is not a number steps from the saved value [18.71ms]
+(pass) search > finds settings by label and help in the sidebar's order, counts them per section and marks the words [11.67ms]
+(pass) search > agrees with the core's searchSettings [7.58ms]
+(pass) search > nothing found: Search commands in Shortcuts carries the words over; Clear search goes back [16.78ms]
+(pass) search > Go to section leaves the results [15.81ms]
+(pass) reset > a changed row resets that one setting; a default row has no Reset [11.18ms]
+(pass) reset > Reset section… names the count and calls resetSection with the section id [18.08ms]
+(pass) reset > Reset section confirm calls the action [20.39ms]
+(pass) reset > a section with nothing changed has no Reset section button [10.12ms]
+(pass) reset > Reset all settings… on About counts settings and shortcuts, Cancel does nothing, confirm calls resetAll [17.07ms]
+(pass) reset > Esc closes a sheet [12.14ms]
+(pass) reset > with nothing changed, Reset all is disabled and says so [9.03ms]
+(pass) reset > an action that fails shows its error and leaves the window usable [26.47ms]
+(pass) the inspector > nothing selected: recent changes, newest five, with Reset on each and All changes (n) [11.67ms]
+(pass) the inspector > All changes (n) opens Changes [13.80ms]
+(pass) the inspector > a changed setting selected: description, default, current, changed by, history, Reset to the default, agent commands [13.01ms]
+(pass) the inspector > an unchanged setting: Never changed, and Reset to is disabled [13.37ms]
+(pass) the inspector > a click anywhere on the row outside its control opens the inspector, and a second click keeps it open [17.08ms]
+(pass) the inspector > clicking empty space in the pane goes back to recent changes [19.11ms]
+(pass) the inspector > clicking empty space in a search result pane clears the selected setting too [24.02ms]
+(pass) the inspector > a secret: agents see whether a key is saved, never its value, and there is no Reset [13.66ms]
+(pass) the inspector > on Changes it shows the selected entry's setting [14.54ms]
+(pass) the inspector > on Changes a shortcut entry shows the shortcut's inspector [14.02ms]
+(pass) agent changes > a row changed by an agent since Changes was last opened is highlighted, says who and when, and links to its entry [16.02ms]
+(pass) agent changes > seen: the same change is an ordinary row that still names the agent [9.23ms]
+(pass) agent changes > opening Changes and leaving it both report the time [20.32ms]
+(pass) Changes > groups Today, Yesterday and Earlier; counts the filters from the core [14.11ms]
+(pass) Changes > filter by who and by text [25.07ms]
+(pass) Changes > each entry shows old → new, who and when; a reset is tagged; Reset calls resetEntry [11.67ms]
+(pass) Changes > a key saved or removed reads Key connected / Key removed with who and when, and offers no Reset or Undo [14.77ms]
+(pass) Changes > empty: No changes yet, and the filters are inert [7.63ms]
+(pass) Changes > an import is one card with Undo import; the Imports filter appears; undo calls undoBatch with the batch [23.43ms]
+(pass) Changes > selecting the import card shows the batch in the inspector: when, which Mac, counts, skipped, Undo, agent commands [19.03ms]
+(pass) Changes > the copied undo command names the batch, quoted, even when it is the newest import [17.81ms]
+(pass) Changes > an import lands on its card even when Changes was filtered to Agents with a search that matches nothing [34.93ms]
+(pass) Shortcuts > lists the registry's commands by group with their chords as macOS writes them; a changed one says so [16.44ms]
+(pass) Shortcuts > search narrows by label or group [11.20ms]
+(pass) Shortcuts > rebinding to a free chord goes straight through [12.46ms]
+(pass) Shortcuts > a clash asks Swap, Replace or Cancel; Swap gives the other command this one's chord [14.55ms]
+(pass) Shortcuts > Replace takes the chord and leaves the other command with none [13.84ms]
+(pass) Shortcuts > Cancel drops the clash and changes nothing [13.01ms]
+(pass) Shortcuts > a chord the estate keeps is refused with the registry's words and offers only Cancel [10.83ms]
+(pass) Shortcuts > Esc stops recording; Backspace removes the shortcut [18.15ms]
+(pass) Shortcuts > Reset on a changed shortcut and Reset all… act on shortcuts [13.89ms]
+(pass) Shortcuts > the inspector shows the command: default, current, where it appears, and the agent command [9.78ms]
+(pass) Shortcuts > the agent commands for a shortcut are left out unless asked for [10.30ms]
+(pass) Shortcuts > a fixed command shows its chord but cannot be recorded [9.82ms]
+(pass) Accounts and keys > lists slots by group with their status; never a value [10.52ms]
+(pass) Accounts and keys > Sign out, Replace key… and Remove call the host [9.78ms]
+(pass) Accounts and keys > a key typed in is handed over once, then cleared; it is never in the page [19.07ms]
+(pass) Accounts and keys > a secret row never shows a value, whatever the slot holds [23.46ms]
+(pass) Accounts and keys > the inspector for a slot says where it is stored and what uses it [11.33ms]
+(pass) About > shows the version, copies it, shows the update status and offers a check [11.01ms]
+(pass) Settings file: export and import > Export settings… asks the host [7.26ms]
+Warning: An update to SettingsWindow inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at SettingsWindow (/Users/dominiklukes/gitrepos/06_apps-utilities/03_misc-utilities/app-patterns/packages/settings-react/src/settings-window.tsx:130:15)
+Warning: An update to SettingsWindow inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at SettingsWindow (/Users/dominiklukes/gitrepos/06_apps-utilities/03_misc-utilities/app-patterns/packages/settings-react/src/settings-window.tsx:130:15)
+(pass) Settings file: export and import > Import settings… shows the preview sheet: count, old → new, skipped with reason, already match; Import applies exactly that preview [13.97ms]
+(pass) Settings file: export and import > Cancel on the preview imports nothing [21.63ms]
+(pass) Settings file: export and import > another app's file is refused with a sheet that names it, and Choose another file… picks again [14.10ms]
+(pass) Settings file: export and import > a file that is not a settings file at all is refused in the core's words [14.41ms]
+(pass) the window follows the core, not its own logic > the batch the core's applyImport writes renders as an import card with its skipped item [18.27ms]
+(pass) the window follows the core, not its own logic > counts in the window equal the core's [10.48ms]
+(pass) the window follows the core, not its own logic > Example Recorder in the same window: its own sections, rows and agent command name [9.60ms]
+(pass) the About Updates slot renders the shared update card [15.00ms]
+(pass) legacy update checker requires host declaration and reports rejection visibly [50.59ms]
+
+src/review-fixes.test.tsx:
+(pass) 1. shell quoting > shellArg: plain words as they are, everything else in single quotes [2.30ms]
+(pass) 1. shell quoting > a setting key and a choice value are quoted in the copied commands [29.24ms]
+(pass) 1. shell quoting > a slot id is quoted [50.87ms]
+(pass) 1. shell quoting > an import's file name keeps ~/Downloads/ outside the quotes; the batch id is quoted [53.98ms]
+(pass) 2. secrets > a key draft passed in `initial` is ignored: the field starts empty and the draft is nowhere [10.28ms]
+(pass) 2. secrets > while the save is pending the field is already cleared and empty in the page [15.77ms]
+(pass) 2. secrets > after a failed save the field is empty, the form stays open and the page holds no copy [25.17ms]
+(pass) 3. Undo import names its batch > the newest import names its batch too, never --last; an older one says its own id [23.42ms]
+(pass) 4. keyboard > a setting row is focusable and Enter or Space selects it [11.53ms]
+(pass) 4. keyboard > a Changes entry is focusable and Enter or Space selects it [9.88ms]
+(pass) 4. keyboard > an import header is focusable and Enter or Space selects it [10.70ms]
+(pass) 4. keyboard > a shortcut row is focusable and Enter or Space selects it [7.17ms]
+(pass) 4. keyboard > a slot row is focusable and Enter or Space selects it [6.50ms]
+(pass) 4. keyboard > Space selects a Changes entry; a key on a button inside a row does not select the row [8.95ms]
+(pass) 4. keyboard > fixed shortcuts can be selected from the keyboard too [7.54ms]
+(pass) 4. keyboard > focusing a row's own control selects that row; clicking it afterwards does not unselect it [14.73ms]
+(pass) 4. keyboard > a slot's button focus selects the slot [8.76ms]
+(pass) 4. keyboard > a number field steps with ArrowUp and ArrowDown; the step buttons are out of the tab order [10.32ms]
+(pass) 5. modal sheets > focus starts on Cancel, the background is inert, and Escape cancels and returns focus to the opener [10.89ms]
+(pass) 5. modal sheets > Tab and Shift+Tab stay inside the sheet [10.22ms]
+(pass) 5. modal sheets > closing by Cancel also restores focus [10.20ms]
+(pass) 5. modal sheets > the import sheet and the wrong-file sheet take focus and keep Escape as Cancel [14.48ms]
+(pass) 6. shortcut agent commands > hidden by default [11.50ms]
+(pass) 6. shortcut agent commands > when enabled: rebind and reset-shortcut, with the command id and chord quoted [6.78ms]
+(pass) 7. a successful import lands on its batch in Changes > the host updates the state before it returns, naming the batch [25.95ms]
+(pass) 7. a successful import lands on its batch in Changes > the host updates the state after it returns, naming nothing: the newest import is found when it arrives [35.01ms]
+(pass) 7. a successful import lands on its batch in Changes > a failed import stays where it was and shows the error [14.14ms]
+(pass) 8. onChangesSeen > fires when Changes opens, and again when it is left [12.32ms]
+(pass) 8. onChangesSeen > fires when the window starts on Changes, and when it closes on Changes [7.09ms]
+(pass) 8. onChangesSeen > unmounting elsewhere does not fire it [5.37ms]
+(pass) 8. onChangesSeen > the new highlight stays for the visit even when the host stores the time at once, and is gone after [17.39ms]
+
+src/settings-css.test.ts:
+(pass) the stylesheet > the root declares no accent variable, so one set on an ancestor is inherited; every use has a default [0.08ms]
+(pass) the stylesheet > inspector values wrap instead of scrolling sideways [0.03ms]
+(pass) the stylesheet > the inspector's reset button wraps a long default instead of clipping it [0.03ms]
+
+src/format.test.ts:
+
+src/shortcut-conflicts.test.tsx:
+(pass) settings: reserved return chord disables Swap with the operation's reason; Replace persists [27.12ms]
+(pass) cheat: reserved return chord disables Swap with the operation's reason; Replace persists [30.93ms]
+(pass) settings: a swap of custom unreserved chords persists and reloads [21.04ms]
+(pass) pin: a swap of custom unreserved chords persists and reloads [20.32ms]
+(pass) an open conflict re-evaluates both its return chord and the current holder without preview writes [23.80ms]
+(pass) a conflict disables Swap again when a changed binding returns to its reserved default [18.07ms]
+(pass) a fixed holder keeps the existing refusal without offering conflict actions [10.59ms]
+(pass) the actual operation remains authoritative if bindings change after the rendered preview [15.46ms]
+
+src/who-view.test.ts:
+(pass) whoView > names the known actors [0.16ms]
+(pass) whoView > an app update without a version is still an app update [0.02ms]
+(pass) whoView > an unknown kind is neutral, never You [0.02ms]
+
+ 124 pass
+ 0 fail
+ 541 expect() calls
+Ran 124 tests across 6 files. [2.25s]
+$ bun run gen:css && bun run build:deps && bun run build:js && bun run build:css
+$ bun run scripts/gen-css.ts
+$ bun run --cwd ../commands build && bun run --cwd ../settings build && bun run --cwd ../updates-react build
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts --outdir dist --target node --format esm --packages external
+$ tsc -p tsconfig.build.json
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/node/index.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+$ tsc -p tsconfig.build.json
+$ bun run build:deps && bun run build:js && bun run build:css
+$ bun run --cwd ../updates build
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/electron.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+$ tsc -p tsconfig.build.json
+$ tsc -p tsconfig.build.json
+$ mkdir -p dist && cp src/updates.css dist/updates.css
+$ tsc -p tsconfig.build.json
+$ bun run scripts/gen-css.ts --dist
+$ bun run build:deps && bun run typecheck && bun test && bun run build
+$ bun run --cwd ../commands build && bun run --cwd ../settings build && bun run --cwd ../settings-react build
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts --outdir dist --target node --format esm --packages external
+$ tsc -p tsconfig.build.json
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/node/index.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+$ tsc -p tsconfig.build.json
+$ bun run gen:css && bun run build:deps && bun run build:js && bun run build:css
+$ bun run scripts/gen-css.ts
+$ bun run --cwd ../commands build && bun run --cwd ../settings build && bun run --cwd ../updates-react build
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts --outdir dist --target node --format esm --packages external
+$ tsc -p tsconfig.build.json
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/node/index.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+$ tsc -p tsconfig.build.json
+$ bun run build:deps && bun run build:js && bun run build:css
+$ bun run --cwd ../updates build
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/electron.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+$ tsc -p tsconfig.build.json
+$ tsc -p tsconfig.build.json
+$ mkdir -p dist && cp src/updates.css dist/updates.css
+$ tsc -p tsconfig.build.json
+$ bun run scripts/gen-css.ts --dist
+$ tsc -p tsconfig.json
+
+src/install.test.ts:
+(pass) the Settings window > is created once, at 1000×690, not minimizable or full-screen, hidden inset title bar, locked-down web preferences [5.43ms]
+(pass) the Settings window > showOnReady: false keeps the window hidden, also when it is opened again [2.02ms]
+(pass) the Settings window > a second open focuses the open window and tells it the section; no second window [1.70ms]
+(pass) the Settings window > a new window gets its section in the first view, once [1.81ms]
+(pass) the Settings window > closing it lets the next open create a fresh one [1.58ms]
+(pass) the Settings window > never navigates away, never opens a window, never attaches a webview [1.61ms]
+(pass) who may call bridle-settings: > only the Settings window's top frame on its own page [1.63ms]
+(pass) who may call bridle-settings: > isSettingsWindowSender applies the same rule to an app's own handlers [1.65ms]
+(pass) who may call bridle-settings: > nothing answers while no Settings window is open [1.65ms]
+(pass) who may call bridle-settings: > dispose removes every handler [2.03ms]
+(pass) channel names > every channel is under the reserved bridle-settings: prefix [0.05ms]
+(pass) channel names > an app's own settings:set handler does not clash, and gets no access through the Settings rule [1.53ms]
+(pass) channel names > a channel the app already handles stops the install, names the channel and leaves no handler of ours [1.51ms]
+(pass) channel names > an app handle on the outgoing changed channel stops the install before anything is set up [1.56ms]
+(pass) channel names > an app on on the outgoing changed channel stops the install before anything is set up [1.37ms]
+(pass) channel names > an app handle on the outgoing section channel stops the install before anything is set up [1.61ms]
+(pass) channel names > an app on on the outgoing section channel stops the install before anything is set up [1.42ms]
+(pass) channel names > the probe of the outgoing channels leaves no handler on them [1.66ms]
+(pass) channel names > a channel the app listens on with ipcMain.on stops the install the same way [1.52ms]
+(pass) changes go through the store with who > set: one entry by you; bad arguments refused before the store [7.30ms]
+(pass) changes go through the store with who > rebind rebuilds the menu with the new accelerator; unknown commands and odd chords refused [6.69ms]
+(pass) changes go through the store with who > reset, resetSection, resetAll, resetEntry and undoBatch [27.49ms]
+(pass) export and import through the native panels > export writes the export file where the panel says; cancel does nothing [3.99ms]
+(pass) export and import through the native panels > import: preview from the picked file, apply uses main's own preview (a forged one is ignored), one batch by import [7.25ms]
+(pass) export and import through the native panels > import: cancel is null; an unreadable or wrong file is said in words [1.96ms]
+(pass) export and import through the native panels > choosePath only for path settings, folder picker by default [2.03ms]
+(pass) the product name > appName replaces app.getName() in the App menu, the About card and the export file name [1.81ms]
+(pass) the product name > without it the menu says app.getName() [1.70ms]
+(pass) the menu > installed at start; Settings…, Import Settings… and app commands run where they belong [1.61ms]
+(pass) the menu > startImport() does what Import Settings… does, so a rebound import-settings imports from any route [2.95ms]
+(pass) the menu > Import Settings… on a closed window opens it with the import waiting in the first view [1.55ms]
+(pass) invariant 6: an open window sees an outside change within 1 s > an agent's write from another store is pushed as changed [159.53ms]
+(pass) invariant 6: an open window sees an outside change within 1 s > an outside shortcut change rebuilds the menu too [157.33ms]
+(pass) invariant 6: an open window sees an outside change within 1 s > the window's own change is pushed once, not twice [67.94ms]
+(pass) the page boundary is the configured URL, exactly > another query or fragment on the same file has no authority and cannot be navigated to [4.13ms]
+(pass) invariant 6 with slots that answer late > a stalled slot read never holds a push back: changes every 100 ms each arrive within 1 s, the slots shown as problem [1418.91ms]
+(pass) invariant 6 with slots that answer late > a first read that never answers: the view lists the schema's keys as problem rows, at once and after 500 ms [603.72ms]
+(pass) invariant 6 with slots that answer late > reads run one at a time, so no view shows a slot status older than the latest read that answered [35.12ms]
+(pass) invariant 6 with slots that answer late > a read late by 500 ms shows the slots as problem until it answers; its answer then replaces that [529.77ms]
+(pass) the changelog's status before a key change comes from the slot cache > setSecret does not wait for a read; a problem slot logs as missing [16.73ms]
+(pass) the changelog's status before a key change comes from the slot cache > a connected slot in the cache logs as connected on removal, while the adapter's next read is held [15.11ms]
+(pass) invariant 3 for keys > save and remove each log exactly one entry with who and status words; a refused save logs none [6.82ms]
+(pass) checkForUpdates is confined to the Settings window and takes no arguments [1.56ms]
+(pass) view declares a legacy update checker only when the host installed one [2.92ms]
+(pass) Electron peer compatibility admits the tested 44.7.2 exactly alongside the existing range [0.10ms]
+
+src/bridge.test.ts:
+(pass) createSettingsBridge > every action invokes its bridle-settings: channel [0.26ms]
+(pass) createSettingsBridge > onChanged and onSection subscribe and unsubscribe [0.16ms]
+(pass) createSettingsBridge > offers no way to read a key [0.08ms]
+(pass) checkForUpdates invokes its dedicated channel without arguments [0.05ms]
+
+src/secret-slots.test.ts:
+(pass) SafeStorageSlots > round trip: set, list shows connected + last four only, get returns the value, remove [0.87ms]
+(pass) SafeStorageSlots > nothing on disk in plain text; the file is 0600 and no temporary file is left [0.32ms]
+(pass) SafeStorageSlots > damaged ciphertext reads as problem, with a fixed message and no last four [0.31ms]
+(pass) SafeStorageSlots > secure storage unavailable: set refused, a saved key reads as problem [0.34ms]
+(pass) SafeStorageSlots > bad values are refused in fixed words that never echo the value [0.13ms]
+(pass) SafeStorageSlots > a short key is connected but shows no last four [0.17ms]
+(pass) SafeStorageSlots > a link in place of the key file is never followed or replaced [0.29ms]
+(pass) SafeStorageSlots > slot ids are checked when declared [0.24ms]
+(pass) a slot's shapeHint > a shape refusal says the slot's hint, never the check's own string; no hint says SLOT_MESSAGES.shape [0.39ms]
+(pass) a slot's shapeHint > checkSecret with a def whose hint was never checked falls back to SLOT_MESSAGES.shape [0.06ms]
+(pass) a slot's shapeHint > a check that writes the value into its definition's hint cannot change what is said [0.13ms]
+(pass) a slot's shapeHint > each field is read once: a hint getter that turns multiline after the first read is kept as first read [0.10ms]
+(pass) a slot's shapeHint > an invalid hint is refused when the slots are made [1.00ms]
+(pass) slotsForWindow > keeps only the known fields; last4 cut to four, and only for a connected slot; detail only in the package's fixed words [0.05ms]
+(pass) SafeStorageSlots: links on the way to the key folder > a key folder that is a link is neither read nor written through [0.46ms]
+(pass) SafeStorageSlots: links on the way to the key folder > a link in a folder between the root and the key folder is refused [0.29ms]
+(pass) SafeStorageSlots: links on the way to the key folder > a folder swapped for a link after construction is refused (its realpath was pinned) [0.30ms]
+(pass) SafeStorageSlots: links on the way to the key folder > a key folder outside its root is refused when declared [0.10ms]
+(pass) SafeStorageSlots: a short write never replaces a good key > a write that stops short is finished in more writes [0.38ms]
+(pass) SafeStorageSlots: a short write never replaces a good key > a write that fails part way keeps the old key file and leaves no temporary file [0.49ms]
+(pass) SafeStorageSlots: a short write never replaces a good key > a write that makes no progress is a failure, not a loop [0.45ms]
+
+src/payload-audit.test.ts:
+(pass) no handler returns a key's value > every answer and every push holds status and last four at most [33.38ms]
+(pass) no handler returns a key's value > the settings file and the export never hold it; the key file is not plain text [34.20ms]
+(pass) no handler returns a key's value > an app's own SecretSlots that leaks a value in list() or in an error is stripped before IPC [24.64ms]
+(pass) an adapter's own words never reach the window > slot detail, set errors and remove errors become the package's fixed words [1.80ms]
+(pass) an adapter's own words never reach the window > the default slots' own fixed words still come through [1.49ms]
+(pass) a slot's shapeHint reaches the window only as that slot's refusal > the declared hint comes through on a shape refusal; the check's own string never does [1.52ms]
+(pass) a slot's shapeHint reaches the window only as that slot's refusal > another slot's error in the same words, a removal in those words, and an undeclared hint become fixed words [1.57ms]
+(pass) a slot's shapeHint reaches the window only as that slot's refusal > the hint's words without the shape marker (a storage failure, say) become fixed words [1.53ms]
+(pass) a slot's shapeHint reaches the window only as that slot's refusal > a Map subclass's own iterator is not used to read the hints [1.55ms]
+(pass) a slot's shapeHint reaches the window only as that slot's refusal > an app's own SecretSlots with an invalid hint is refused at install [1.38ms]
+
+ 80 pass
+ 0 fail
+ 361 expect() calls
+Ran 80 tests across 4 files. [3.25s]
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/main.ts ./src/preload.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+$ tsc -p tsconfig.build.json
+
+scripts/run-workspaces.test.mjs:
+(pass) buildOrder > puts dependencies first and ignores external deps [0.24ms]
+(pass) buildOrder > is alphabetical within a tier [0.03ms]
+(pass) buildOrder > throws on a cycle [0.08ms]
+(pass) planRun > skips packages without the script [0.07ms]
+(pass) runOrdered > runs in dependency order [0.11ms]
+(pass) runOrdered > stops at the first failure and names the package [0.04ms]
+
+scripts/release-vendor.test.mjs:
+(pass) planVendor > rewrites @app-patterns deps to vendored tarballs and adds the peer closure [1.20ms]
+(pass) planVendor > leaves everything except @app-patterns values byte-for-byte unchanged [0.25ms]
+(pass) planVendor > creates an overrides section when the root has none [0.22ms]
+(pass) planVendor > workspace package.json files point at the root vendor folder and get no overrides [0.16ms]
+(pass) planVendor > override-only names are vendored too [0.07ms]
+(pass) planVendor > peerDependencies keep their ranges [0.07ms]
+(pass) planVendor > plans removal only for ledger files the app no longer uses; reports unowned ones [0.26ms]
+(pass) planVendor > is idempotent: a vendored package.json plans no changes [0.47ms]
+(pass) planVendor > fails on a @app-patterns package the manifest does not know [0.03ms]
+(pass) helpers > frameworkClosure follows peers transitively [0.02ms]
+(pass) helpers > tarballSpec is relative to the package.json
+(pass) plain semver comparator sets > accepts ^0.2.0 [0.09ms]
+(pass) plain semver comparator sets > accepts ~0.2.0 [0.06ms]
+(pass) plain semver comparator sets > accepts 0.2.3 [0.04ms]
+(pass) plain semver comparator sets > accepts >=0.2.0 <0.3.0 [0.04ms]
+(pass) plain semver comparator sets > accepts >= 0.2.0 <= 0.2.3 [0.04ms]
+(pass) plain semver comparator sets > accepts ^0.1.0 || ^0.2.0 [0.04ms]
+
+scripts/release-vendor-safety.test.mjs:
+(pass) manifest file names cannot escape vendor/app-patterns > a manifest file of ../../../escape.tgz is refused and nothing is written outside [86.40ms]
+(pass) symlinks are refused before any change > vendor/app-patterns as a symlink to a folder outside the app [151.10ms]
+(pass) symlinks are refused before any change > a root package.json that is a symlink to a file outside the app [146.85ms]
+(pass) workspace package.json files must be inside the app > a ../sibling workspace is refused, even in a dry run [78.71ms]
+(pass) cleanup deletes only files the tool placed and that are unchanged > a hand-placed app-patterns-*.tgz is kept and reported; no ledger means no deletions [88.43ms]
+(pass) cleanup deletes only files the tool placed and that are unchanged > a stale tarball the tool placed is deleted only while its bytes match the ledger [166.93ms]
+(pass) the peer closure comes from the verified archives > a manifest whose frameworkPeers disagree with the archive is refused [82.33ms]
+(pass) the bytes written are the bytes verified > a release file swapped after verification does not reach the app [106.07ms]
+(pass) every app package.json and vendor/app-patterns must be committed > an uncommitted workspace package.json the tool would not change still blocks --write [95.69ms]
+(pass) every app package.json and vendor/app-patterns must be committed > uncommitted files in vendor/app-patterns block --write [127.90ms]
+(pass) writes never follow a symlink planted after verification > vendored.json turned into a symlink is replaced, its target untouched [132.07ms]
+(pass) writes never follow a symlink planted after verification > a tarball destination turned into a symlink is replaced, its target untouched [97.53ms]
+(pass) writes never follow a symlink planted after verification > vendor turned into a symlink to an outside folder is refused before any write [95.94ms]
+(pass) writes never follow a symlink planted after verification > vendor/app-patterns turned into a symlink to an outside folder is refused before any write [94.22ms]
+(pass) a ledger alone never authorises a deletion > a forged ledger naming a hand-placed file with its hash, but no App Patterns Framework release, keeps the file [90.20ms]
+(pass) an existing vendored tarball is kept only on an exact byte match > same contents but different bytes, not in the ledger, are refused and left alone [92.17ms]
+(pass) an existing vendored tarball is kept only on an exact byte match > an older build the ledger shows we placed unchanged is replaced; the ledger records the release integrity [90.32ms]
+(pass) an existing vendored tarball is kept only on an exact byte match > a ledger-listed tarball whose bytes changed since placement is refused [87.35ms]
+(pass) an existing vendored tarball is kept only on an exact byte match > the exact release bytes are kept [160.63ms]
+(pass) a ledger-authorised replacement re-checks the bytes at write time > a listed tarball changed after verification is refused by name and nothing is written [107.60ms]
+(pass) App Patterns Framework peer ranges > incompatible peer refuses before any write (write=false) [87.72ms]
+(pass) App Patterns Framework peer ranges > regression: existing missing-peer refusal writes nothing (write=false) [81.43ms]
+(pass) App Patterns Framework peer ranges > compatible peer closure succeeds (write=false) [94.38ms]
+(pass) App Patterns Framework peer ranges > incompatible peer refuses before any write (write=true) [78.71ms]
+(pass) App Patterns Framework peer ranges > regression: existing missing-peer refusal writes nothing (write=true) [94.44ms]
+(pass) App Patterns Framework peer ranges > compatible peer closure succeeds (write=true) [90.47ms]
+(pass) plain App Patterns Framework peer range syntax > invalid range "latest" refuses without writing (write=false) [85.13ms]
+(pass) plain App Patterns Framework peer range syntax > invalid range "next" refuses without writing (write=false) [83.20ms]
+(pass) plain App Patterns Framework peer range syntax > invalid range "x" refuses without writing (write=false) [109.53ms]
+(pass) plain App Patterns Framework peer range syntax > invalid range "" refuses without writing (write=false) [94.86ms]
+(pass) plain App Patterns Framework peer range syntax > invalid range ">=" refuses without writing (write=false) [92.66ms]
+(pass) plain App Patterns Framework peer range syntax > invalid range "file:../x" refuses without writing (write=false) [129.65ms]
+(pass) plain App Patterns Framework peer range syntax > invalid range "npm:@app-patterns/x@^0.2.0" refuses without writing (write=false) [95.01ms]
+(pass) plain App Patterns Framework peer range syntax > invalid range "^0.2.0 || garbage" refuses without writing (write=false) [103.25ms]
+(pass) plain App Patterns Framework peer range syntax > prerelease peer range is accepted (write=false) [103.19ms]
+(pass) plain App Patterns Framework peer range syntax > invalid range "latest" refuses without writing (write=true) [83.33ms]
+(pass) plain App Patterns Framework peer range syntax > invalid range "next" refuses without writing (write=true) [84.66ms]
+(pass) plain App Patterns Framework peer range syntax > invalid range "x" refuses without writing (write=true) [82.72ms]
+(pass) plain App Patterns Framework peer range syntax > invalid range "" refuses without writing (write=true) [76.96ms]
+(pass) plain App Patterns Framework peer range syntax > invalid range ">=" refuses without writing (write=true) [76.32ms]
+(pass) plain App Patterns Framework peer range syntax > invalid range "file:../x" refuses without writing (write=true) [77.76ms]
+(pass) plain App Patterns Framework peer range syntax > invalid range "npm:@app-patterns/x@^0.2.0" refuses without writing (write=true) [82.39ms]
+(pass) plain App Patterns Framework peer range syntax > invalid range "^0.2.0 || garbage" refuses without writing (write=true) [79.43ms]
+(pass) plain App Patterns Framework peer range syntax > prerelease peer range is accepted (write=true) [90.07ms]
+(pass) a Settings-only app vendors successfully without optional updates tarballs [87.83ms]
+
+scripts/release-pack.test.mjs:
+(pass) tarball reading > reads entries from a gzipped tarball and its package.json [0.15ms]
+(pass) tarball reading > contentsDigest ignores timestamps, entry order and gzip level, not file bytes [0.21ms]
+(pass) tarball reading > missingPromisedFiles names export targets absent from the tarball [0.23ms]
+(pass) immutabilityVerdict > a version never released is new [0.06ms]
+(pass) immutabilityVerdict > identical contents on disk or in the manifest keep the release [0.01ms]
+(pass) immutabilityVerdict > different contents under a released version fail and ask for a bump [0.08ms]
+(pass) manifest records > records the current version and the released file [0.02ms]
+(pass) manifest records > repacking identical contents keeps the original commit and time [0.04ms]
+(pass) helpers > tarballFileName drops the scope [0.02ms]
+(pass) helpers > frameworkPeers keeps only @app-patterns peers [0.01ms]
+(pass) helpers > filesFieldProblem flags a files list without dist [0.01ms]
+(pass) helpers > parseArgs scopes --only names [0.09ms]
+(pass) release validation > an absent manifest is the only fresh start [0.04ms]
+(pass) release validation > a manifest without `released` is corrupt, not fresh [0.06ms]
+(pass) release validation > a packages record whose file is missing from `released` is corrupt [0.18ms]
+(pass) release validation > a packages record disagreeing with `released` is corrupt [0.03ms]
+(pass) release validation > the current packages record digest is checked too [0.03ms]
+(pass) release validation > a wildcard export target must match at least one archive file [0.09ms]
+(pass) release validation > a target with more than one wildcard is rejected [0.10ms]
+(pass) release validation > tarballs ship no source, tests or home-folder paths [0.16ms]
+(pass) release validation > a record missing integrity or contentsDigest is corrupt, not equal-as-undefined [0.14ms]
+(pass) release validation > source maps are screened by their parsed keys, and unparseable maps are refused [0.14ms]
+(pass) release validation > readTarEntries refuses entry types it would otherwise skip [0.20ms]
+(pass) release validation > readTarEntries refuses non-zero data after the end-of-archive blocks [0.13ms]
+(pass) release validation > nested source-map sections are walked to any depth [0.53ms]
+(pass) release validation > truncated padding, a partial header or missing end blocks are refused [0.13ms]
+(pass) release pack build inputs > a stale dist file never reaches the tarball [883.96ms]
+(pass) release pack build inputs > cleaning dist never follows a symlink outside that package's dist [1193.47ms]
+(pass) tarballs refuse Windows home paths with either slash style and drive-letter case [0.19ms]
+(pass) optional framework peers do not become required tarballs
+
+scripts/release-json-edit.test.mjs:
+(pass) setSectionString > refuses a section with duplicate keys [0.06ms]
+(pass) setSectionString > refuses a document with duplicate top-level keys [0.06ms]
+(pass) setSectionString > an empty-string duplicate key is caught and does not mask a later duplicate [0.05ms]
+(pass) setSectionString > keeps CRLF line endings when inserting [0.02ms]
+(pass) setSectionString > appends to an unsorted section and keeps tab indentation [0.04ms]
+(pass) lineDiff marks removed then added lines [0.01ms]
+
+scripts/lock-age-check.test.mjs:
+(pass) lock-age-check > routes npm metadata queries through the supplied cache
+(pass) lock-age-check > extracts and deduplicates registry resolutions from a Bun text lock [0.24ms]
+(pass) lock-age-check > reports only releases younger than the configured age [0.16ms]
+(pass) lock-age-check > rejects a registry resolution whose publish time is absent [0.06ms]
+
+ 108 pass
+ 0 fail
+ 241 expect() calls
+Ran 108 tests across 6 files. [6.54s]

@@ -1,5 +1,5 @@
 /** The Shortcuts page: every command of the registry, rebound in place with a recorder; a clash asks Swap, Replace or Cancel. */
-import { changedFromDefault } from "@app-patterns/settings";
+import { changedFromDefault, commandsAdapter, rebindMany } from "@app-patterns/settings";
 import type { ReactNode } from "react";
 import { Kbd, Recorder } from "./controls.tsx";
 import { c, cx } from "./format.ts";
@@ -43,13 +43,24 @@ function ConflictBox({ row }: { row: CommandRow }): ReactNode {
     );
   }
   const other = clash.by;
+  const swapPairs = [{ commandId: row.id, chord: conflict.chord }, { commandId: other, chord: row.chord }];
+  const replacePairs = [{ commandId: row.id, chord: conflict.chord }, { commandId: other, chord: "" }];
+  // The pure operation judges the whole batch just as the store does. Discard its proposed state/log;
+  // preview clocks never consume host ids, and the eventual action still validates the latest state.
+  const previewContext = { schema: env.ctx.schema, commands: commandsAdapter(env.registry), who: { kind: "you" } as const, now: () => 0, newId: () => "preview" };
+  const swap = rebindMany(env.ctx.state, swapPairs, previewContext);
+  const replace = rebindMany(env.ctx.state, replacePairs, previewContext);
   return (
     <div className={c("conf-box")} role="alert">
-      <Icon name="circle-alert" /><span>{showChord(conflict.chord)} is used by {commandLabel(env.ctx, other)}.</span><span className={c("sp")} />
-      <Btn onClick={() => { done(); void env.run(() => env.actions.rebindMany([{ commandId: row.id, chord: conflict.chord }, { commandId: other, chord: row.chord }])); }}>
+      <Icon name="circle-alert" /><span>
+        {showChord(conflict.chord)} is used by {commandLabel(env.ctx, other)}.
+        {!swap.ok ? <> Swap unavailable: {swap.error}.</> : null}
+        {!replace.ok ? <> Replace unavailable: {replace.error}.</> : null}
+      </span><span className={c("sp")} />
+      <Btn disabled={!swap.ok} onClick={() => { if (!swap.ok) return; done(); void env.run(() => env.actions.rebindMany(swapPairs)); }}>
         <Icon name="arrow-left-right" />Swap
       </Btn>
-      <Btn onClick={() => { done(); void env.run(() => env.actions.rebindMany([{ commandId: row.id, chord: conflict.chord }, { commandId: other, chord: "" }])); }}>Replace</Btn>
+      <Btn disabled={!replace.ok} onClick={() => { if (!replace.ok) return; done(); void env.run(() => env.actions.rebindMany(replacePairs)); }}>Replace</Btn>
       <Btn onClick={done}>Cancel</Btn>
     </div>
   );
