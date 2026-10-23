@@ -103,3 +103,10 @@ JS
 - Reviewed481bcc1..4def24a. Spec: one P3 defect; Standards: none. Independent targeted suite142/142 and1007 assertions; scope/limits in research/2026-10-23-astra-review-of-mediawell-command-contract-repairs-round-one.md.
 - Existing Shortcuts conflict UI offers Swap for a newly rebindable Settings default. Swapping Settings defaultCmdComma with Refresh CmdR proposes giving reservedCmdComma to Refresh; shared store correctly refuses. UI must validate the whole batch and offer only valid actions.
 - Next Sol repair: renderer/shared-resolver guard with a real settings-operation regression. Preserve valid Replace and custom/custom swaps. No package artefacts packed yet;0.4.2 remains unused and may include this pre-release repair.
+
+## Accepted source and packing
+
+- Astra round2 accepted sourcef31633e: original P3 resolved, no new Spec/Standards findings. Independently150 targeted tests/1073 assertions and renderer typecheck passed. Scoped verdict captured in research/.
+- Parent ran bun1.3.10 release:pack from exact clean reviewed sourcef31633e. Exit0; Commands/Settings React/Settings Electron0.4.2 packed; Outline/Settings/Updates/Updates React0.4.1 unchanged and kept.
+- New release records referencef31633e with commitDirty:false; no existing immutable contents replaced. No npm/GitHub Release publication.
+- MediaWell still must consume the coherent set, remove broad peer override, enable estate rebinding and pass actual Electron44.7.2 integration.
