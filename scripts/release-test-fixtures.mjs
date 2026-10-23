@@ -2,7 +2,7 @@
 // releases/ folder with real tarballs and a manifest, and throwaway git apps.
 
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { gzipSync } from "node:zlib";
@@ -33,8 +33,18 @@ export function tar(files, { mtime = 0 } = {}) {
   return Buffer.concat(blocks);
 }
 
+const madeDirs = [];
+let exitHooked = false;
+
+/** A fresh temp folder, removed when the process exits (and by callers' own rmSync, which is harmless to repeat). */
 export function tempDir(label = "release-test-") {
-  return mkdtempSync(join(tmpdir(), label));
+  const d = mkdtempSync(join(tmpdir(), label));
+  madeDirs.push(d);
+  if (!exitHooked) {
+    exitHooked = true;
+    process.on("exit", () => { for (const x of madeDirs.splice(0)) rmSync(x, { recursive: true, force: true }); });
+  }
+  return d;
 }
 
 /** A package tarball for `manifest` (package.json contents) plus a dist file. */
