@@ -3,7 +3,7 @@
  * so a test can read the result and the package needs no Electron dependency.
  *
  * Fixed frame: App (About, Settings…, Export Settings…, Import Settings…, app items, Hide/Quit) · Edit (roles + declared Edit groups) ·
- * declared app menus · View · Window · Help (cheat sheet, app items). Items show their chord but do not register it (`registerAccelerator: false`):
+ * View · declared app menus · Window · Help (cheat sheet, app items). Items show their chord but do not register it (`registerAccelerator: false`):
  * the window's own key handler runs the command, so a key is never handled twice.
  */
 import { toAccelerator } from "./chords.ts";
@@ -113,5 +113,5 @@ export function buildMenuTemplate<G extends string, Ctx>(input: MenuInput<G, Ctx
     label: "Help",
     submenu: [frameItem(FRAME_CHEAT_ID), ...(appItems?.help ?? []), ...declared("Help")],
   };
-  return [appMenu, editMenu, ...appMenus, viewMenu, windowMenu, helpMenu];
+  return [appMenu, editMenu, viewMenu, ...appMenus, windowMenu, helpMenu];
 }

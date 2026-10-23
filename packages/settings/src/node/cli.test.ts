@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { existsSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runSettingsCli, type SettingsCliOptions } from "./cli.ts";
+import { defineRegistry } from "../../../commands/src/index.ts";
+import { commandsAdapter } from "../commands-adapter.ts";
 import { commands, schema, tempDir } from "./node-fixture.test-support.ts";
 
 interface Run {
@@ -338,4 +340,21 @@ describe("settings CLI: fix round 2", () => {
     expect((await run("reset-shortcut", "rename", "--yes")).code).toBe(2);
     expect((await run("reset-shortcut", "no-such")).code).toBe(2);
   });
+});
+
+
+it("CLI shares estate rebinding and platform refusal through the registry adapter", async () => {
+  const registry = defineRegistry([{ id: "palette", group: "Go", label: "Palette", key: "⌘⇧P", icon: "x", fixed: true }], { rebindableEstateDefaults: true });
+  const dir = tempDir();
+  const run = cli(dir, { registry: commandsAdapter(registry) });
+  expect((await run("rebind", "palette", "cmd+alt+p", "--json")).code).toBe(0);
+  const before = readFileSync(join(dir, "settings.json"), "utf8");
+  for (const [chord, reason] of [["cmd+ctrl+alt+shift+r", /four modifiers|Raycast/], ["ctrl+right", /Spaces|Mission Control/]] as const) {
+    const refused = await run("rebind", "palette", chord, "--json");
+    expect(refused.code).toBe(2);
+    expect(refused.json.error).toMatch(reason);
+    expect(readFileSync(join(dir, "settings.json"), "utf8")).toBe(before);
+  }
+  expect((await run("rebind", "palette", "cmd+ctrl+shift+right", "--json")).code).toBe(0);
+  expect(saved(dir).keys.palette).toBe("⌘⌃⇧→");
 });

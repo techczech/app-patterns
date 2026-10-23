@@ -5,6 +5,7 @@ import { defineSchema } from "./schema.ts";
 import { emptyState } from "./state.ts";
 import { rebind, rebindMany } from "./operations.ts";
 import { loadState } from "./load.ts";
+import { previewImport, applyImport } from "./transfer.ts";
 
 const registry = defineRegistry<"Item" | "Go">([
   { id: "rename", group: "Item", label: "Rename", key: "⌘R", icon: "pencil" },
@@ -42,5 +43,33 @@ describe("commandsAdapter", () => {
     expect(back.state.keys).toEqual({ rename: "⌘D", pin: "⌘R" });
     expect(back.entries).toEqual([]);
     expect(rebind(emptyState("demo"), "rename", "⌘D", ctx)).toMatchObject({ ok: false, code: "invalid-chord", error: "⌘D is already used by “Pin or unpin”" });
+  });
+});
+
+
+describe("shared estate and platform contracts through Settings", () => {
+  const registry = defineRegistry([{ id: "palette", group: "Go", label: "Palette", key: "⌘⇧P", icon: "x", fixed: true }], { rebindableEstateDefaults: true });
+  const commands = commandsAdapter(registry);
+  const context = { ...ctx, commands };
+  it("keeps valid saved and migrated estate overrides through load and rebind", () => {
+    const keys = { palette: "⌘⌥P", settings: "⌘⌥G", cheat: "⌘⌥/" };
+    const loaded = loadState({ ...emptyState("demo"), keys }, { ...context, appVersion: "1" });
+    expect(loaded.state.keys).toEqual(keys);
+    expect(loaded.entries).toEqual([]);
+    const migrated = loadState({ legacy: true }, { ...context, appVersion: "1", migrate: () => ({ settings: {}, keys }) });
+    expect(migrated.state.keys).toEqual(keys);
+    expect(rebind(emptyState("demo"), "palette", keys.palette, context)).toMatchObject({ ok: true, state: { keys: { palette: keys.palette } } });
+  });
+  it("imports accepted estate bindings and skips platform conflicts with specific reasons", () => {
+    for (const [chord, reason] of [["⌘⌃⌥⇧R", /four modifiers|Raycast/], ["⌃→", /Spaces|Mission Control/]] as const) {
+      const file = { format: "bridle-settings-export", version: 1, app: "demo", settings: {}, keys: { settings: "⌘⌥G", palette: chord } };
+      const preview = previewImport(emptyState("demo"), JSON.stringify(file), { schema, commands });
+      expect(preview.changes).toEqual([expect.objectContaining({ commandId: "settings", to: "⌘⌥G" })]);
+      expect(preview.skipped).toHaveLength(1);
+      expect(preview.skipped[0]?.reason).toMatch(reason);
+      const applied = applyImport(emptyState("demo"), preview, { file: "settings.json" }, context);
+      expect(applied).toMatchObject({ ok: true, state: { keys: { settings: "⌘⌥G" } } });
+      expect(rebind(emptyState("demo"), "palette", chord, context)).toMatchObject({ ok: false, error: expect.stringMatching(reason) });
+    }
   });
 });

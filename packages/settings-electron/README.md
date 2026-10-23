@@ -100,6 +100,16 @@ bun build src/preload/settings.ts --outfile out/preload/settings.cjs --target no
 
 `--external electron` is required; nothing else may stay external.
 
+## Electron compatibility
+
+Version 0.4.2 declares `electron: ">=30 <43 || 44.7.2"` and `^0.4.2` peers for Commands and Settings React. The exact Electron 44.7.2 addition covers MediaWell's tested version without admitting other 43/44 releases or disabling peer checking. Other framework peers retain their existing compatible ranges.
+
+The framework host tests use Electron doubles. The focused compatibility check below downloads the official 44.7.2 package, verifies its declared SHA-512 integrity and typechecks the host's used APIs against its declaration file. It installs no Electron runtime and removes its temporary fixture.
+
+```sh
+bun run scripts/check-electron-compatibility.mjs # from the framework root; requires network access
+```
+
 ## Checks
 
 `bun run check`: builds `@app-patterns/commands`, `@app-patterns/settings` and `@app-patterns/settings-react`, type-checks, runs the tests (fake

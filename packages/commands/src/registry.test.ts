@@ -248,3 +248,81 @@ describe("scopes", () => {
     expect(r.commandForChord({ g: "X" }, "X", " global")).toBe("g");
   });
 });
+
+
+describe("rebindable estate defaults", () => {
+  const estate = [
+    ["palette", "⌘⇧P", "⌘⌥P"], ["search", "⌘⇧F", "⌘⌥S"], ["find", "⌘F", "⌘⌥F"],
+    ["switcher", "⌘⇧K", "⌘⌥J"], ["context", "⌘K", "⌘⌥K"], ["inspector", "⌘P", "⌘⌥I"],
+    ["rebind", "⌘⇧,", "⌘⌥,"], ["settings", "⌘,", "⌘⌥G"], ["cheat", "⌘/", "⌘⌥/"],
+  ] as const;
+  const input: CommandDef<"G">[] = estate.map(([id, key]) => ({ ...base, id, label: id, key, fixed: true, typing: true }));
+  const create = () => defineRegistry(input, { rebindableEstateDefaults: true });
+
+  test("all nine estate bindings move, survive saved overrides and return to their own default", () => {
+    const registry = create();
+    const overrides = Object.fromEntries(estate.map(([id, , chord]) => [id, chord]));
+    const { bindings, rejected } = registry.resolveBindings(JSON.parse(JSON.stringify(overrides)));
+    expect(rejected).toEqual([]);
+    for (const [id, key, custom] of estate) {
+      expect(bindings[id]).toBe(custom);
+      expect(registry.commandForChord(bindings, custom)).toBe(id);
+      expect(registry.commandForChord(bindings, key)).toBeNull();
+      expect(registry.checkRebind(bindings, id, key)).toEqual({ kind: "ok" });
+      expect(registry.byId(id)?.fixed).toBeUndefined();
+      expect(registry.overlayIds.has(id)).toBe(true);
+    }
+    expect(input.every((d) => d.fixed)).toBe(true);
+    expect(Object.isFrozen(registry.defs[0])).toBe(true);
+    expect(registry.cheatSheet(bindings).flatMap((g) => g.entries).filter((e) => overrides[e.id]).map((e) => e.chord).sort()).toEqual(Object.values(overrides).sort());
+  });
+
+  test("freed default chords keep their meanings in every scope, even for fixed intruders", () => {
+    const registry = defineRegistry([...input, { ...base, id: "other", key: "⌘J", scope: "list" }], { rebindableEstateDefaults: true });
+    const bindings = registry.bindingsOf(Object.fromEntries(estate.map(([id]) => [id, ""])));
+    for (const [id, key] of estate) {
+      expect(bindings[id]).toBe("");
+      expect(registry.checkRebind(bindings, "other", key)).toMatchObject({ kind: "reserved" });
+      expect(registry.resolveBindings({ [id]: "", other: key }).rejected).toContainEqual({ commandId: "other", chord: key, reason: "reserved" });
+      expect(() => defineRegistry([...input, { ...base, id: "impostor", key, scope: "list", fixed: true }], { rebindableEstateDefaults: true })).toThrow(/reserved/);
+    }
+    expect(registry.checkRebind(bindings, "other", "⌘Q")).toMatchObject({ kind: "reserved" });
+  });
+
+  test("non-fixed estate defaults may claim their meaning only with opt-in, and collisions still refuse", () => {
+    const plain = [{ ...base, id: "palette", key: "⌘⇧P" }];
+    expect(() => defineRegistry(plain)).toThrow(/reserved/);
+    const registry = defineRegistry([...plain, { ...base, id: "other", key: "⌘J" }], { rebindableEstateDefaults: true });
+    expect(registry.checkRebind(registry.bindingsOf(), "palette", "⌘J")).toEqual({ kind: "taken", by: "other" });
+    expect(registry.resolveBindings({ palette: "⌘J" }).bindings.palette).toBe("⌘⇧P");
+  });
+
+  test("legacy callers and explicitly fixed non-estate commands keep fixed behaviour", () => {
+    const legacy = defineRegistry(input);
+    expect(legacy.resolveBindings({ palette: "⌘⌥P", settings: "⌘⌥G" }).rejected.map((r) => r.reason)).toEqual(["fixed", "fixed"]);
+    const registry = defineRegistry([{ ...base, id: "fixed-action", key: "⌘J", fixed: true }, { ...base, id: "other", key: "" }], { rebindableEstateDefaults: true });
+    expect(registry.checkRebind(registry.bindingsOf(), "fixed-action", "⌘L")).toEqual({ kind: "fixed" });
+    expect(registry.checkRebind(registry.bindingsOf(), "other", "⌘J")).toEqual({ kind: "reserved", by: "L" });
+  });
+});
+
+describe("platform binding restrictions", () => {
+  const registry = defineRegistry([{ ...base, id: "refresh", key: "⌘R" }]);
+  const refused: [string, RegExp][] = [["⌘⌃⌥⇧R", /four modifiers|Raycast/], ...["←", "→", "↑", "↓"].map((arrow): [string, RegExp] => [`⌃${arrow}`, /Mission Control|Spaces/])];
+  for (const [chord, message] of refused) {
+    test(`refuses ${chord} at definition, rebind and saved override boundaries`, () => {
+      for (const fixed of [undefined, true] as const) expect(() => defineRegistry([{ ...base, id: "refresh", key: chord, fixed }])).toThrow(message);
+      const check = registry.checkRebind(registry.bindingsOf(), "refresh", chord);
+      expect(check).toMatchObject({ kind: "platform" });
+      expect(registry.rebindMessage(check, chord)).toMatch(message);
+      expect(registry.resolveBindings({ refresh: chord })).toEqual({ bindings: expect.objectContaining({ refresh: "⌘R" }), rejected: [{ commandId: "refresh", chord, reason: "platform" }] });
+    });
+  }
+  test("keeps Control+Command structural arrows and their subtree variants available", () => {
+    for (const arrow of ["←", "→", "↑", "↓"]) for (const chord of [`⌘⌃${arrow}`, `⌘⌃⇧${arrow}`, `⌃⌥${arrow}`]) {
+      expect(() => defineRegistry([{ ...base, id: "structure", key: chord }])).not.toThrow();
+      expect(registry.checkRebind(registry.bindingsOf(), "refresh", chord)).toEqual({ kind: "ok" });
+      expect(registry.resolveBindings({ refresh: chord }).rejected).toEqual([]);
+    }
+  });
+});

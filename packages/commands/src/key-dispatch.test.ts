@@ -65,3 +65,21 @@ describe("key dispatch", () => {
     expect(dispatchKey(sr, { ...x, metaKey: true, code: "KeyJ" }, sb, { ...free, scope: "list", inField: true })).toBe("jump");
   });
 });
+
+
+test("rebound estate shortcuts drive the event path while typing and with an overlay open", () => {
+  const registry = defineRegistry([{ id: "palette", group: "Go", label: "Palette", key: "⌘⇧P", icon: "x", fixed: true, typing: true }], { rebindableEstateDefaults: true });
+  const bindings = registry.bindingsOf({ palette: "⌘⌥P", settings: "⌘⌥G", cheat: "⌘⌥/" });
+  const visible = { panel: "" };
+  const onKey = (chord: string) => {
+    const id = dispatchKey(registry, press(chord), bindings, { ...free, inField: true, overlay: true });
+    if (id) visible.panel = id;
+  };
+  for (const [id, chord] of [["palette", "⌘⌥P"], ["settings", "⌘⌥G"], ["cheat", "⌘⌥/"]]) {
+    onKey(chord!);
+    expect(visible.panel).toBe(id!);
+  }
+  visible.panel = "unchanged";
+  for (const chord of ["⌘⇧P", "⌘,", "⌘/"]) onKey(chord);
+  expect(visible.panel).toBe("unchanged");
+});

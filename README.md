@@ -12,7 +12,7 @@ Shared patterns for desktop apps, written in TypeScript. One command registry dr
 - [`@app-patterns/updates-react`](packages/updates-react/README.md) provides quiet status marks, the release popover and the About and updates card.
 - `@app-patterns/outline` provides Markdown outline ranges and CodeMirror commands.
 
-All packages are version 0.4.1. The React components require React and lucide-react; the Electron host requires Electron. See each package manifest for supported peer versions.
+`@app-patterns/commands`, `@app-patterns/settings-react` and `@app-patterns/settings-electron` are version 0.4.2; the other packages remain at 0.4.1. The React components require React and lucide-react; the Electron host requires Electron. See each package manifest for supported peer versions.
 
 ## Install with vendored tarballs
 

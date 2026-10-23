@@ -1,6 +1,6 @@
 {
   "name": "@app-patterns/settings-react",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -34,7 +34,7 @@
     "dist"
   ],
   "peerDependencies": {
-    "@app-patterns/commands": "^0.4.1",
+    "@app-patterns/commands": "^0.4.2",
     "@app-patterns/settings": "^0.4.1",
     "lucide-react": ">=0.468.0 <2",
     "react": ">=18",

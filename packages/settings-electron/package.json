@@ -1,6 +1,6 @@
 {
   "name": "@app-patterns/settings-electron",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -35,10 +35,10 @@
     "dist"
   ],
   "peerDependencies": {
-    "@app-patterns/commands": "^0.4.1",
+    "@app-patterns/commands": "^0.4.2",
     "@app-patterns/settings": "^0.4.1",
-    "@app-patterns/settings-react": "^0.4.1",
-    "electron": ">=30 <43"
+    "@app-patterns/settings-react": "^0.4.2",
+    "electron": ">=30 <43 || 44.7.2"
   },
   "peerDependenciesMeta": {
     "@app-patterns/commands": {

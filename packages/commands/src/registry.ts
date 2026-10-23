@@ -2,7 +2,7 @@
  * The command registry: the one list the palette, the cheat sheet, the shortcuts page, the app menu and the key handler read.
  * A command is added here and nowhere else; a binding is what the registry says unless the user's saved overrides change it. Pure.
  */
-import { canonChord, isTypingSafe, isValidChord, type Chord } from "./chords.ts";
+import { canonChord, chordRestriction, isTypingSafe, isValidChord, type Chord } from "./chords.ts";
 import { RESERVED_ESTATE, RESERVED_SYSTEM } from "./reserved.ts";
 
 export interface CommandDef<G extends string = string, Ctx = unknown> {
@@ -14,7 +14,7 @@ export interface CommandDef<G extends string = string, Ctx = unknown> {
   key: Chord;
   /** A lucide icon name (the renderer maps it). */
   icon: string;
-  /** One of the estate's shared chords: the same in every app, so it cannot be rebound and nothing else can take its chord. */
+  /** Keeps this binding fixed. With `rebindableEstateDefaults`, estate default holders may move; their default meanings stay reserved. */
   fixed?: true;
   /** May fire while a text field has focus. Every other command returns early there, so typing keeps its own meaning. */
   typing?: true;
@@ -41,7 +41,7 @@ export type Bindings = Record<string, Chord>;
 export type RebindCheck =
   | { kind: "ok" }
   | { kind: "same" }
-  /** The command is one of the estate's shared chords (or unknown). */
+  /** The command has a fixed binding (or is unknown). */
   | { kind: "fixed" }
   /** The chord belongs to the estate or the system, named in `by`. */
   | { kind: "reserved"; by: string }
@@ -51,6 +51,8 @@ export type RebindCheck =
   | { kind: "typing" }
   /** Another command has it. */
   | { kind: "taken"; by: string }
+  /** A syntactically valid chord the platform keeps for another purpose. */
+  | { kind: "platform"; reason: string }
   /** Not modifiers plus one supported key. */
   | { kind: "invalid" };
 
@@ -58,7 +60,7 @@ export type RebindCheck =
 export interface RejectedOverride {
   commandId: string;
   chord: Chord;
-  reason: "fixed" | "reserved" | "bare" | "typing" | "taken" | "invalid" | "unknown";
+  reason: "fixed" | "reserved" | "bare" | "typing" | "taken" | "platform" | "invalid" | "unknown";
 }
 
 /** The group the package's own frame commands (Settings, cheat sheet, Export and Import Settings) sit in. */
@@ -68,7 +70,7 @@ export const FRAME_SETTINGS_ID = "settings";
 export const FRAME_CHEAT_ID = "cheat";
 export const FRAME_EXPORT_SETTINGS = "export-settings";
 export const FRAME_IMPORT_SETTINGS = "import-settings";
-/** Ids of the commands the package supplies to every registry. An app may relabel them, not remove or rekey them. */
+/** Ids of the commands the package supplies to every registry. An app may relabel them; overrides may rekey them with `rebindableEstateDefaults`. */
 export const FRAME_COMMAND_IDS: readonly string[] = [FRAME_SETTINGS_ID, FRAME_CHEAT_ID, FRAME_EXPORT_SETTINGS, FRAME_IMPORT_SETTINGS];
 
 const frameCommands = (): CommandDef<FrameGroup, never>[] => [
@@ -126,7 +128,13 @@ export interface Registry<G extends string, Ctx> {
 }
 
 export interface RegistryOptions {
-  /** Command ids that still run while an overlay is open. Default: every `fixed` command. */
+  /**
+   * Let holders of RESERVED_ESTATE default chords (including Settings and cheat sheet) move or remove their binding, even if marked
+   * `fixed`. The original default chord remains reserved for that holder in every scope. Other fixed commands keep their semantics.
+   * Default false preserves older callers' fixed bindings. Declare the estate default in `key`; supply saved choices as overrides.
+   */
+  rebindableEstateDefaults?: boolean;
+  /** Command ids that still run while an overlay is open. Default: every `fixed` command and rebindable estate default holder. */
   overlayIds?: string[];
 }
 
@@ -145,10 +153,21 @@ export function defineRegistry<G extends string, Ctx = void>(input: readonly Com
     return { ...f, label: d.label || f.label, icon: d.icon || f.icon };
   });
   merged.push(...frame.values());
-  const defs: readonly Def[] = Object.freeze(merged.map((d) => Object.freeze({ ...d })));
+  // Ownership comes from declared defaults, never from labels, current bindings or saved overrides.
+  const estateOwners = new Map<Chord, string>();
+  if (options.rebindableEstateDefaults) for (const d of merged) {
+    if (!Object.hasOwn(RESERVED_ESTATE, d.key)) continue;
+    if (estateOwners.has(d.key)) throw new Error(`Command "${d.id}" defaults to ${d.key}, which is reserved for "${estateOwners.get(d.key)}"`);
+    estateOwners.set(d.key, d.id);
+  }
+  const defs: readonly Def[] = Object.freeze(merged.map((d) => {
+    const copy = { ...d };
+    if (estateOwners.get(d.key) === d.id) delete copy.fixed;
+    return Object.freeze(copy);
+  }));
 
   const reserved: Record<Chord, string> = Object.assign(Object.create(null), RESERVED_SYSTEM, RESERVED_ESTATE);
-  for (const d of defs) if (d.fixed && d.key) reserved[canonChord(d.key)] = d.label;
+  for (const d of defs) if ((d.fixed || estateOwners.get(d.key) === d.id) && d.key) reserved[canonChord(d.key)] = d.label;
 
   const seenIds = new Set<string>();
   const seenKeys = new Map<string, string>();
@@ -163,16 +182,18 @@ export function defineRegistry<G extends string, Ctx = void>(input: readonly Com
     if (!validScope(d)) throw new Error(`Command "${d.id}" has an invalid scope "${describeRaw(d.scope)}"`);
     if (!d.key) continue;
     if (!isValidChord(d.key) || canonChord(d.key) !== d.key) throw new Error(`Command "${d.id}" has an invalid default chord "${d.key}"`);
+    const restriction = chordRestriction(d.key);
+    if (restriction) throw new Error(`Command "${d.id}": ${restriction}`);
     const slot = `${scopeOf(d)}\u0000${d.key}`;
     const other = seenKeys.get(slot);
     if (other) throw new Error(`Commands "${other}" and "${d.id}" share the default chord ${d.key}${d.scope ? ` in scope "${d.scope}"` : ""}`);
     seenKeys.set(slot, d.id);
-    if (!d.fixed && reserved[d.key]) throw new Error(`Command "${d.id}" defaults to ${d.key}, which is reserved for "${reserved[d.key]}"`);
+    if (!d.fixed && reserved[d.key] && estateOwners.get(d.key) !== d.id) throw new Error(`Command "${d.id}" defaults to ${d.key}, which is reserved for "${reserved[d.key]}"`);
   }
 
   const byId = (id: string): Def | undefined => defs.find((d) => d.id === id);
   const groups = [...new Set(defs.map((d) => d.group))];
-  const overlayIds = new Set(options.overlayIds ?? defs.filter((d) => d.fixed).map((d) => d.id));
+  const overlayIds = new Set(options.overlayIds ?? merged.filter((d) => d.fixed || estateOwners.get(d.key) === d.id).map((d) => d.id));
 
   const emptyBindings = (): Bindings => Object.create(null) as Bindings;
   const resolveBindings = (overrides: Overrides = {}): { bindings: Bindings; rejected: RejectedOverride[] } => {
@@ -224,13 +245,15 @@ export function defineRegistry<G extends string, Ctx = void>(input: readonly Com
     const current = Object.hasOwn(bindings, id) ? bindings[id] ?? "" : "";
     if (!want) return current ? { kind: "ok" } : { kind: "same" };
     if (!isValidChord(want)) return { kind: "invalid" };
+    const restriction = chordRestriction(want);
+    if (restriction) return { kind: "platform", reason: restriction };
     if (canonChord(current) === want) return { kind: "same" };
     if (!isTypingSafe(want)) {
       if (scopeOf(def) === "global") return { kind: "bare" };
       if (def.typing) return { kind: "typing" };
     }
     const by = reserved[want];
-    if (by) return { kind: "reserved", by };
+    if (by && estateOwners.get(want) !== id) return { kind: "reserved", by };
     const other = heldInScope(bindings, want, scopeOf(def));
     if (other && other !== id) return { kind: "taken", by: other };
     return { kind: "ok" };
@@ -239,6 +262,7 @@ export function defineRegistry<G extends string, Ctx = void>(input: readonly Com
     switch (r.kind) {
       case "fixed": return "This shortcut is the same in all the apps, so it cannot be changed";
       case "invalid": return "That is not a key combination this app can use";
+      case "platform": return r.reason;
       case "reserved": return `${chord} is kept for “${r.by}”, so it cannot be used here`;
       case "bare": return `${chord} alone is for typing; add ⌘, ⌥ or ⌃`;
       case "typing": return `${chord} alone is for typing, and this command also runs while typing; add ⌘, ⌥ or ⌃`;

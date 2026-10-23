@@ -10,6 +10,7 @@ export const RESERVED_ESTATE: Readonly<Record<Chord, string>> = {
   "⌘⇧F": "Search everything",
   "⌘,": "Settings",
   "⌘/": "Keyboard cheat sheet",
+  "⌘⇧,": "Change the shortcut",
 };
 
 /** Chords the system and text editing use; nothing may take them. Chord to what it does. */

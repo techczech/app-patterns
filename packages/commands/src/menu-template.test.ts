@@ -34,7 +34,7 @@ describe("menu coverage", () => {
 
 describe("menu template", () => {
   test("has the fixed frame in order", () => {
-    expect(build().map((m) => m.label)).toEqual(["Demo", "Edit", "Go", "Item", "View", "Window", "Help"]);
+    expect(build().map((m) => m.label)).toEqual(["Demo", "Edit", "View", "Go", "Item", "Window", "Help"]);
     const app = build()[0]!.submenu!;
     expect(app.map((i) => i.label ?? i.role ?? i.type)).toEqual([
       "about", "separator", "Settings…", "Export Settings…", "Import Settings…", "separator", "hide", "hideOthers", "unhide", "separator", "quit",
@@ -112,4 +112,20 @@ describe("menu template", () => {
     expect(commands(t).find((i) => i.label === "Rename")!.accelerator).toBe("F5");
     expect(commands(t).find((i) => i.label === "Pin or unpin")!.accelerator).toBe("Shift+F6");
   });
+});
+
+
+test("estate overrides reach generated menu accelerators without losing availability or coverage", () => {
+  const registry = defineRegistry<"Go", { selected: boolean }>([
+    { id: "palette", group: "Go", label: "Palette", key: "⌘⇧P", icon: "x", fixed: true, available: (c) => c.selected ? null : "Select an item" },
+  ], { rebindableEstateDefaults: true });
+  const bindings = registry.bindingsOf({ palette: "⌘⌥P", settings: "⌘⌥G", cheat: "⌘⌥/" });
+  const ran: string[] = [];
+  const template = buildMenuTemplate({ appName: "Demo", registry, bindings, menus: [{ label: "Go", groups: ["Go"] }], ctx: { selected: false }, run: (id) => ran.push(id) });
+  const menuCommands = commands(template);
+  expect(menuCommands.find((i) => i.label === "Palette")).toMatchObject({ accelerator: "Cmd+Alt+P", registerAccelerator: false, enabled: false });
+  expect(menuCommands.find((i) => i.label === "Settings…")?.accelerator).toBe("Cmd+Alt+G");
+  expect(menuCommands.find((i) => i.label === "Keyboard cheat sheet")?.accelerator).toBe("Cmd+Alt+/");
+  menuCommands.forEach((i) => i.click!());
+  expect(ran.sort()).toEqual(registry.defs.map((d) => d.id).sort());
 });

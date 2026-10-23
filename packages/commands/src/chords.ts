@@ -29,6 +29,16 @@ export function isValidChord(chord: unknown): chord is Chord {
   return !!m && SUPPORTED_KEYS.has(m[5]!);
 }
 
+/** A platform refusal for a binding, separate from chord spelling; every registry entry path uses this check. */
+export function chordRestriction(chord: Chord): string | null {
+  const { mods, key } = splitChord(chord);
+  if (mods.length === 4) return "Four modifiers are reserved for Raycast; use fewer modifiers";
+  if (mods.length === 1 && mods[0] === "⌃" && ["←", "→", "↑", "↓"].includes(key)) {
+    return "Control+arrow is kept for Mission Control and Spaces; add Command for structural movement";
+  }
+  return null;
+}
+
 /** The modifiers of a chord as a set, and its key. */
 export function splitChord(chord: Chord): { mods: string[]; key: string } {
   return { mods: MODS.filter((m) => chord.includes(m)), key: chord.replace(/[⌃⌥⇧⌘]/g, "") };
