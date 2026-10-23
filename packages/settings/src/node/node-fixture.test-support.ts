@@ -8,6 +8,13 @@ import type { SettingsState } from "../state.ts";
 import { SettingsStore, type SettingsStoreOptions } from "./settings-store.ts";
 
 const made: string[] = [];
+// bun runs a shared module's afterEach only for the first test file that loads it, so also sweep at process exit.
+let exitHooked = false;
+function ensureExitCleanup(): void {
+  if (exitHooked) return;
+  exitHooked = true;
+  process.on("exit", () => { for (const d of made.splice(0)) rmSync(d, { recursive: true, force: true }); });
+}
 afterEach(() => {
   for (const d of made.splice(0)) rmSync(d, { recursive: true, force: true });
 });
@@ -16,6 +23,7 @@ afterEach(() => {
 export function tempDir(): string {
   const d = realpathSync(mkdtempSync(join(tmpdir(), "bridle-settings-")));
   made.push(d);
+  ensureExitCleanup();
   return d;
 }
 
