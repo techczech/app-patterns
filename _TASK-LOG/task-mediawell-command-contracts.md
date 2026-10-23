@@ -97,3 +97,9 @@ JS
 
 4. In MediaWell, enable the registry option, consume Commands/Settings React/Settings Electron 0.4.2 with Settings 0.4.1, remove the blanket `legacy-peer-deps` flag, and update its existing npm lock normally. Do not migrate MediaWell to Bun or downgrade Electron.
 5. Parent repeats real-Electron integration on **44.7.2** after vendoring, then requests Astra acceptance. The ten earlier real-Electron journey groups and mocked native encryption are parent-reported context, not rerun here. No app launch, native keychain check or packaged-runtime check performed by this sub-agent. MediaWell-local findings 1–3 remain with the separate repair task.
+
+## Astra framework review round one
+
+- Reviewed481bcc1..4def24a. Spec: one P3 defect; Standards: none. Independent targeted suite142/142 and1007 assertions; scope/limits in research/2026-10-23-astra-review-of-mediawell-command-contract-repairs-round-one.md.
+- Existing Shortcuts conflict UI offers Swap for a newly rebindable Settings default. Swapping Settings defaultCmdComma with Refresh CmdR proposes giving reservedCmdComma to Refresh; shared store correctly refuses. UI must validate the whole batch and offer only valid actions.
+- Next Sol repair: renderer/shared-resolver guard with a real settings-operation regression. Preserve valid Replace and custom/custom swaps. No package artefacts packed yet;0.4.2 remains unused and may include this pre-release repair.
