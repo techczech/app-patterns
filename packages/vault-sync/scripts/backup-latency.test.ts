@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { creditCapture, parseArgs, runLatency, summary, type Sample } from "./backup-latency.ts";
+import { command, creditCapture, parseArgs, runLatency, summary, type Sample } from "./backup-latency.ts";
 
 const root = fileURLToPath(new URL("./", import.meta.url));
 const config = () => parseArgs(["--output", root, "--duration-ms", "100", "--interval-ms", "50", "--capture-ms", "100", "--drain-ms", "5000", "--files", "2"]);
@@ -67,3 +67,122 @@ describe("latency coverage accounting", () => {
     } finally { clearTimeout(timer); await rm(output, { recursive: true, force: true }); }
   }, 20_000);
 });
+
+
+describe("before-cleanup observation barrier", () => {
+  test("awaits final immutable marker readback before removing the owned fixture", async () => {
+    const output = await mkdtemp(join(root, ".latency-test-"));
+    let fixture = "";
+    let observed = false;
+    try {
+      const run = await runLatency({ ...config(), output }, undefined, {
+        timeoutMs: 5000,
+        beforeCleanup: async (context) => {
+          fixture = context.fixture;
+          const events = (await readFile(join(context.output, "latency-events.jsonl"), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+          const protectedEvents = events.filter((e) => e.type === "protected");
+          expect(protectedEvents).toHaveLength(4);
+          for (const event of protectedEvents) {
+            const text = await command("git", ["cat-file", "blob", `${event.snapshot}:notes/document-${event.id % 2}.md`], context.repo, 1000);
+            expect(text.split("\n")).toContain(`synthetic-edit-${event.id}`);
+          }
+          await new Promise((resolve) => setTimeout(resolve, 25));
+          expect((await stat(fixture)).isDirectory()).toBe(true);
+          observed = true;
+        },
+      });
+      expect(observed).toBe(true);
+      expect(run.result.observation.status).toBe("passed");
+      expect(run.result.allCovered).toBe(true);
+      expect(await stat(fixture).catch(() => null)).toBeNull();
+    } finally { await rm(output, { recursive: true, force: true }); }
+  }, 20_000);
+
+  for (const mode of ["throw", "reject", "timeout", "cancel"] as const) {
+    test(`${mode} observation settles, preserves receipts and cleans the fixture`, async () => {
+      const output = await mkdtemp(join(root, ".latency-test-"));
+      const stop = new AbortController();
+      if (mode === "cancel") stop.abort();
+      let fixture = "";
+      let settled = false;
+      let fixturePresentAtSettlement = false;
+      try {
+        const run = await runLatency({ ...config(), output }, stop.signal, {
+          timeoutMs: mode === "timeout" ? 10 : 5000,
+          beforeCleanup: (context) => {
+            fixture = context.fixture;
+            if (mode === "throw") throw new Error("observer failed");
+            return (async () => {
+              try {
+                if (mode === "reject") throw new Error("observer rejected");
+                if (!context.signal.aborted) await new Promise<void>((resolve) => context.signal.addEventListener("abort", () => resolve(), { once: true }));
+                await new Promise((resolve) => setTimeout(resolve, 25));
+                fixturePresentAtSettlement = (await stat(fixture)).isDirectory();
+              } finally { settled = true; }
+            })();
+          },
+        });
+        expect(run.result.observation.status).toBe(mode === "timeout" ? "timed-out" : mode === "cancel" ? "cancelled" : "failed");
+        expect(run.result.acceptance).toBe(false);
+        expect(run.result.fixtureCleaned).toBe(true);
+        expect(run.result.fatal).toBeNull();
+        if (mode !== "throw") expect(settled).toBe(true);
+        if (mode === "timeout" || mode === "cancel") expect(fixturePresentAtSettlement).toBe(true);
+        if (mode !== "cancel") expect(run.result.allCovered).toBe(true);
+        expect(await stat(fixture).catch(() => null)).toBeNull();
+        expect(JSON.parse(await readFile(join(run.output, "latency-summary.json"), "utf8")).observation).toEqual(run.result.observation);
+        expect(Array.isArray(JSON.parse(await readFile(join(run.output, "latency-samples.json"), "utf8")))).toBe(true);
+      } finally { await rm(output, { recursive: true, force: true }); }
+    }, 20_000);
+  }
+});
+
+
+test("setup failure still observes its existing fixture and then cleans", async () => {
+  const output = await mkdtemp(join(root, ".latency-test-"));
+  const previousPath = process.env.PATH;
+  let fixture = "";
+  let observed = false;
+  try {
+    process.env.PATH = "";
+    const run = await runLatency({ ...config(), output }, undefined, {
+      beforeCleanup: async (context) => {
+        fixture = context.fixture;
+        observed = (await stat(fixture)).isDirectory();
+      },
+    });
+    expect(observed).toBe(true);
+    expect(run.result.fatal).not.toBeNull();
+    expect(run.result.observation.status).toBe("passed");
+    expect(run.result.acceptance).toBe(false);
+    expect(await stat(fixture).catch(() => null)).toBeNull();
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH; else process.env.PATH = previousPath;
+    await rm(output, { recursive: true, force: true });
+  }
+});
+
+
+test("cancellation during observation waits for cooperative settlement before cleanup", async () => {
+  const output = await mkdtemp(join(root, ".latency-test-"));
+  const stop = new AbortController();
+  let fixture = "";
+  let observedBeforeCleanup = false;
+  try {
+    const run = await runLatency({ ...config(), output }, stop.signal, {
+      beforeCleanup: async (context) => {
+        fixture = context.fixture;
+        const cancellation = new Promise<void>((resolve) => context.signal.addEventListener("abort", () => resolve(), { once: true }));
+        stop.abort();
+        await cancellation;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        observedBeforeCleanup = (await stat(fixture)).isDirectory();
+      },
+    });
+    expect(observedBeforeCleanup).toBe(true);
+    expect(run.result.observation.status).toBe("cancelled");
+    expect(run.result.aborted).toBe(true);
+    expect(run.result.allCovered).toBe(true);
+    expect(await stat(fixture).catch(() => null)).toBeNull();
+  } finally { await rm(output, { recursive: true, force: true }); }
+}, 20_000);

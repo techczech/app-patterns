@@ -19,6 +19,25 @@ export interface Config {
   fault: "none" | "unavailable" | "slow-push" | "large-asset";
   faultAtMs: number; outageMs: number; slowMs: number; assetBytes: number;
 }
+/** Test-only seam. Callbacks must await all work and cooperate with signal/deadlineAt.
+ * Timeout requests cancellation; it cannot hard-stop arbitrary JavaScript. Cleanup waits
+ * for settlement even after cancellation. Never detach callback work or use a race.
+ */
+export interface LatencyObservationContext {
+  readonly fixture: string;
+  readonly repo: string;
+  /** Owned local bare remote; absent for GitHub. No credentials or remote URLs. */
+  readonly localRemote: string | null;
+  readonly output: string;
+  readonly signal: AbortSignal;
+  readonly deadlineAt: number;
+}
+export interface LatencyTestHooks {
+  beforeCleanup: (context: LatencyObservationContext) => void | Promise<void>;
+  /** Cooperative budget, 1..120000 ms; defaults to 30000. */
+  timeoutMs?: number;
+}
+type ObservationStatus = "not-requested" | "passed" | "failed" | "timed-out" | "cancelled";
 const packageRoot = fileURLToPath(new URL("../", import.meta.url));
 const delay = (ms: number, signal?: AbortSignal) => new Promise<void>((res) => {
   if (signal?.aborted || ms <= 0) return res();
@@ -75,8 +94,12 @@ export function creditCapture(samples: Sample[], contents: Map<string, string>, 
   });
 }
 
-export async function runLatency(config: Config, signal?: AbortSignal) {
+export async function runLatency(config: Config, signal?: AbortSignal, hooks?: LatencyTestHooks) {
   validate(config);
+  const observationBudget = hooks?.timeoutMs ?? 30_000;
+  if (hooks && (!Number.isSafeInteger(observationBudget) || observationBudget <= 0 || observationBudget > 120_000)) throw new Error("invalid observation budget");
+  const observation: { status: ObservationStatus; failure: string | null } = { status: "not-requested", failure: null };
+  let timingElapsedMs: number | undefined;
   const runId = `latency-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}`;
   const output = resolve(config.output, runId);
   await mkdir(output, { recursive: true });
@@ -257,10 +280,31 @@ export async function runLatency(config: Config, signal?: AbortSignal) {
     if (offline) await rename(hiddenRemote, remote).catch(() => {});
     signal?.removeEventListener("abort", abort);
     if (previousTemp === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = previousTemp;
-    await rm(fixture, { recursive: true, force: true });
+    if (hooks) {
+      // Freeze timing before independent archive I/O. This callback never credits samples.
+      timingElapsedMs = Date.now() - start;
+      const observationStop = new AbortController();
+      const cancelObservation = () => observationStop.abort();
+      signal?.addEventListener("abort", cancelObservation, { once: true });
+      if (signal?.aborted) observationStop.abort();
+      let timedOut = false;
+      const deadlineAt = Date.now() + observationBudget;
+      const timer = setTimeout(() => { timedOut = true; observationStop.abort(); }, observationBudget);
+      let failed = false;
+      try {
+        await hooks.beforeCleanup({ fixture, repo, localRemote: config.remote === "local" ? remote : null, output, signal: observationStop.signal, deadlineAt });
+      } catch { failed = true; }
+      finally {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", cancelObservation);
+        observation.status = signal?.aborted ? "cancelled" : timedOut || Date.now() >= deadlineAt ? "timed-out" : failed ? "failed" : "passed";
+        observation.failure = observation.status === "passed" ? null : "independent observation did not complete successfully";
+        await rm(fixture, { recursive: true, force: true });
+      }
+    } else await rm(fixture, { recursive: true, force: true });
   }
-  const result = { runId, ...summary(samples, Math.ceil(config.durationMs / config.intervalMs) * config.files, Date.now() - start, config), fault: config.fault, faultApplied, faultEnded, recoveredAt, recoveryMs: faultEnded !== null && recoveredAt !== null ? recoveredAt - faultEnded : null, assetVerifiedAt, assetDigest, maxScheduleLatenessMs: samples.length ? Math.max(...samples.map((s) => s.editAt - s.scheduledAt)) : null, aborted: signal?.aborted ?? false, fatal, fixtureCleaned: true };
-  if (fatal || result.aborted) result.acceptance = false;
+  const result = { runId, ...summary(samples, Math.ceil(config.durationMs / config.intervalMs) * config.files, timingElapsedMs ?? Date.now() - start, config), observation, fault: config.fault, faultApplied, faultEnded, recoveredAt, recoveryMs: faultEnded !== null && recoveredAt !== null ? recoveredAt - faultEnded : null, assetVerifiedAt, assetDigest, maxScheduleLatenessMs: samples.length ? Math.max(...samples.map((s) => s.editAt - s.scheduledAt)) : null, aborted: signal?.aborted ?? false, fatal, fixtureCleaned: true };
+  if (fatal || result.aborted || !["not-requested", "passed"].includes(observation.status)) result.acceptance = false;
   await writeFile(join(output, "latency-samples.json"), JSON.stringify(samples, null, 2));
   await writeFile(join(output, "latency-summary.json"), JSON.stringify(result, null, 2));
   await emit({ type: "finished", ...result });
