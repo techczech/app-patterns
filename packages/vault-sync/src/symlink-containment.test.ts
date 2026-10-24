@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { setDefaultTimeout, afterEach, describe, expect, test } from "bun:test";
+setDefaultTimeout(30_000);
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";

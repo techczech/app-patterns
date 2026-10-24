@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync, mkdtempSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync, mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { BackupRefusedError, createBackupEngine, RestoreRefusedError, type BackupEngineOptions } from "./index.ts";
@@ -9,7 +9,7 @@ import { autoEnabled, git, gitText, isolatedGitEnv, permissiveGuards, sandbox, t
 
 const sandboxes: Sandbox[] = [];
 afterEach(() => {
-  restoreTestHooks.beforePublish = undefined;
+  for (const key of Object.keys(restoreTestHooks)) delete (restoreTestHooks as Record<string, unknown>)[key];
   while (sandboxes.length) sandboxes.pop()!.cleanup();
 });
 
@@ -311,5 +311,83 @@ describe("fix round", () => {
     for (const bad of ["a/GIT~1/x", "notes/.git /x", ".g\u200cit/config"]) {
       await expect(e.restoreFile(repo, snap, "notes/a.md", { targetPath: bad })).rejects.toMatchObject({ reason: "unsafe-path" });
     }
+  });
+});
+
+describe("second fix round", () => {
+  test("a folder swapped for a symlink after publish: refused, outside same-named file survives", async () => {
+    const { repo } = seeded();
+    const e = engine("machine-a");
+    put(repo, "notes/a.md", "backed up\n");
+    const snap = await backup(e, repo);
+    rmSync(join(repo, "notes/a.md"));
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), "vault-sync-outside-")));
+    sandboxes.push({ dir: outside, repo: "", remote: "", cleanup: () => rmSync(outside, { recursive: true, force: true }) });
+    writeFileSync(join(outside, "a.md"), "precious outside\n");
+    restoreTestHooks.afterPublish = () => {
+      renameSync(join(repo, "notes"), join(repo, "notes-moved"));
+      symlinkSync(outside, join(repo, "notes"));
+    };
+    await expect(e.restoreFile(repo, snap, "notes/a.md")).rejects.toMatchObject({ reason: "beyond-symlink" });
+    expect(readFileSync(join(outside, "a.md"), "utf8")).toBe("precious outside\n");
+    // Our published file sits in the moved folder, inside the worktree and unreachable by the old path; it is left alone.
+    expect(readFileSync(join(repo, "notes-moved/a.md"), "utf8")).toBe("backed up\n");
+  });
+
+  test("without hard links the fallback still never overwrites a file that appears first", async () => {
+    const { repo } = seeded();
+    const e = engine("machine-a");
+    put(repo, "notes/a.md", "backed up\n");
+    const snap = await backup(e, repo);
+    rmSync(join(repo, "notes/a.md"));
+    restoreTestHooks.forceNoLink = true;
+    // Plain fallback publish.
+    const plain = await e.restoreFile(repo, snap, "notes/a.md");
+    expect(plain).toMatchObject({ state: "restored", sibling: false });
+    rmSync(join(repo, "notes/a.md"));
+    // Race after the fallback's own existence check.
+    let fired = 0;
+    restoreTestHooks.afterFallbackCheck = (file) => {
+      if (fired++ === 0) writeFileSync(file, "autosave won the race\n");
+    };
+    const res = await e.restoreFile(repo, snap, "notes/a.md");
+    expect(res.sibling).toBe(true);
+    expect(readFileSync(join(repo, "notes/a.md"), "utf8")).toBe("autosave won the race\n");
+    expect(readFileSync(join(repo, res.path), "utf8")).toBe("backed up\n");
+    expect(readdirSync(join(repo, "notes")).filter((n) => n.startsWith(".vsr-"))).toEqual([]);
+  });
+
+  test("the snapshot walk stops at the first user commit instead of reading the whole history", async () => {
+    const { repo } = seeded();
+    const parent = gitText(repo, ["rev-parse", "HEAD"]);
+    let script = "";
+    for (let i = 0; i < 450; i += 1) {
+      script += `commit refs/heads/main\ncommitter T <t@example.invalid> ${1700000000 + i} +0000\ndata 3\nx${i % 10}\n${i === 0 ? `from ${parent}\n` : ""}\n`;
+    }
+    git(repo, ["fast-import", "--quiet"], script);
+    const e = engine("machine-a");
+    put(repo, "notes/a.md", "chain\n");
+    const first = await backup(e, repo);
+    const [entry] = await e.listBackups(repo);
+    let logs = 0;
+    restoreTestHooks.onSnapshotLog = () => { logs += 1; };
+    expect((await e.listSnapshots(repo, entry!.branch)).map((s) => s.id)).toEqual([first]);
+    expect(logs).toBe(1);
+    logs = 0;
+    expect((await e.listSnapshots(repo, entry!.branch, "notes/a.md")).map((s) => s.id)).toEqual([first]);
+    expect(logs).toBe(1);
+  });
+
+  test("a file name too long for the folder is refused with name-too-long", async () => {
+    const { repo } = seeded();
+    const e = engine("machine-a");
+    const long = `${"n".repeat(244)}.md`;
+    put(repo, `notes/${long}`, "long\n");
+    const snap = await backup(e, repo);
+    // A sibling name would exceed the 255-byte limit.
+    put(repo, `notes/${long}`, "changed\n");
+    await expect(e.restoreFile(repo, snap, `notes/${long}`)).rejects.toMatchObject({ reason: "name-too-long" });
+    await expect(e.restoreFile(repo, snap, `notes/${long}`, { targetPath: `notes/${"m".repeat(300)}.md` })).rejects.toMatchObject({ reason: "name-too-long" });
+    expect(readdirSync(join(repo, "notes")).filter((n) => n.startsWith(".vsr-"))).toEqual([]);
   });
 });

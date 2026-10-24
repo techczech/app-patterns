@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { setDefaultTimeout, afterEach, describe, expect, test } from "bun:test";
+setDefaultTimeout(30_000);
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createBackupEngine, type BackupEngineOptions } from "./index.ts";

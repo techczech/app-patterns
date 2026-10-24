@@ -13,7 +13,7 @@
  */
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { link, lstat, mkdir, open as openHandle, readFile, realpath, rename, rm, rmdir, stat } from "node:fs/promises";
+import { link, lstat, mkdir, open as openHandle, readFile, realpath, rename, rm, rmdir } from "node:fs/promises";
 import { basename, dirname, extname, join, sep } from "node:path";
 import { validateId } from "./backup-ref.ts";
 import { BackupRefusedError, type BackupBlock } from "./blocks.ts";
@@ -50,7 +50,7 @@ export interface RestoreOptions {
   overwrite?: boolean;
 }
 
-export type RestoreRefusal = "target-exists" | "unsafe-path" | "beyond-symlink" | "not-in-snapshot" | "unsupported-entry" | "bad-snapshot" | "too-large";
+export type RestoreRefusal = "target-exists" | "unsafe-path" | "beyond-symlink" | "not-in-snapshot" | "unsupported-entry" | "bad-snapshot" | "too-large" | "name-too-long";
 
 export class RestoreRefusedError extends Error {
   readonly reason: RestoreRefusal;
@@ -98,10 +98,21 @@ export interface RestoreDeps {
 }
 
 /** Test seam: runs after the target was checked and before the file is published. */
-export const restoreTestHooks: { beforePublish?: (target: string) => void | Promise<void> } = {};
+export const restoreTestHooks: {
+  beforePublish?: (target: string) => void | Promise<void>;
+  /** Runs right after the file was published, before the containment re-check. */
+  afterPublish?: (target: string) => void | Promise<void>;
+  /** Pretend hard links are unsupported so the fallback runs. */
+  forceNoLink?: boolean;
+  /** Runs in the fallback after its existence check, before it creates the target. */
+  afterFallbackCheck?: (target: string) => void | Promise<void>;
+  /** Called once per `git log` batch of the snapshot walk. */
+  onSnapshotLog?: () => void;
+} = {};
 
 const SNAPSHOT_BATCH = 200;
 const SNAPSHOT_SCAN_LIMIT = 20000;
+const NAME_TOO_LONG = "that file name is too long for this folder";
 const SIBLING_ATTEMPTS = 20;
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -214,14 +225,13 @@ export function createRestoreApi(deps: RestoreDeps): RestoreApi {
     return { bytes, executable: entry.mode === "100755", parts };
   }
 
-  /** True when `dir` resolves to a real directory inside the real worktree root (same inode as the walked path). */
+  /** True when `dir` resolves to a real directory inside the real worktree root. */
   async function insideRoot(root: string, dir: string): Promise<boolean> {
     const resolved = await realpath(dir);
     if (resolved !== root && !resolved.startsWith(root.endsWith(sep) ? root : root + sep)) return false;
-    // Compare by device and inode, not by path text: a differently cased or normalised name for the same
-    // folder is the same folder on case-insensitive volumes.
-    const [walked, real] = await Promise.all([stat(dir), stat(resolved)]);
-    return walked.dev === real.dev && walked.ino === real.ino;
+    // The prefix test is on the resolved path, so a differently cased or normalised spelling of a real
+    // folder (resolved to its on-disk name) still passes; it says nothing about swaps inside the root.
+    return true;
   }
 
   /** Walks the target's directories, creating missing ones, refusing any symlink or non-directory. */
@@ -277,24 +287,46 @@ export function createRestoreApi(deps: RestoreDeps): RestoreApi {
 
   /**
    * Publishes without replacing: a hard link fails with EEXIST if anything appeared at `file` since the
-   * check. Returns false on EEXIST. Where links are unsupported, falls back to a last-moment existence
-   * check and rename.
+   * check. Returns false on EEXIST. Where links are unsupported (EPERM, ENOTSUP, EXDEV, ENOSYS) it
+   * creates the target directly with O_EXCL and writes the bytes: a check-then-rename there could
+   * overwrite a file that appears in between, and that race cannot be closed with rename. The cost is
+   * that a crash mid-write can leave a partial file at the target; a rerun reports it as target-exists.
    */
-  async function publishNew(temp: string, file: string): Promise<boolean> {
-    try {
-      await link(temp, file);
-      return true;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === "EEXIST") return false;
-      if (code !== "EPERM" && code !== "ENOTSUP" && code !== "EXDEV" && code !== "ENOSYS") throw error;
+  async function publishNew(temp: string, file: string, bytes: Buffer, mode: number): Promise<{ dev: number; ino: number } | null> {
+    if (!restoreTestHooks.forceNoLink) {
+      try {
+        await link(temp, file);
+        return await lstat(temp);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "EEXIST") return null;
+        if (code !== "EPERM" && code !== "ENOTSUP" && code !== "EXDEV" && code !== "ENOSYS") throw error;
+      }
     }
     try {
       await lstat(file);
-      return false;
+      return null;
     } catch { /* absent */ }
-    await rename(temp, file);
-    return true;
+    await restoreTestHooks.afterFallbackCheck?.(file);
+    let handle;
+    try {
+      handle = await openFile(file, mode);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") return null;
+      throw error;
+    }
+    let mine;
+    try {
+      mine = await handle.stat();
+      await handle.writeFile(bytes);
+      await handle.sync();
+    } catch (error) {
+      await handle.close().catch(() => undefined);
+      await rm(file, { force: true });
+      throw error;
+    }
+    await handle.close();
+    return mine;
   }
 
   async function removeCreated(created: string[]): Promise<void> {
@@ -339,14 +371,18 @@ export function createRestoreApi(deps: RestoreDeps): RestoreApi {
       // batches and stop at the first commit that is not the engine's.
       const chain: SnapshotInfo[] = [];
       let boundary: string | null = null;
+      let lastScanned: string | null = null;
+      let reachedEnd = false;
       let skip = 0;
       scan: while (skip < SNAPSHOT_SCAN_LIMIT) {
+        restoreTestHooks.onSnapshotLog?.();
         const found = await git.run(["log", "-z", "--first-parent", "--no-color", `--max-count=${SNAPSHOT_BATCH}`, `--skip=${skip}`, format, ref], run(real, deps.localTimeoutMs, options.signal));
         if (found.code !== 0) throw new RestoreRefusedError("bad-snapshot", "that backup branch has not been fetched; list the backups first");
         const records = splitNul(found.stdout);
         for (const record of records) {
           const row = parse(record);
           if (!row) continue;
+          lastScanned = row.id;
           if (!row.engine) {
             boundary = row.id;
             break scan;
@@ -354,12 +390,18 @@ export function createRestoreApi(deps: RestoreDeps): RestoreApi {
           chain.push({ id: row.id, time: row.time });
           if (!filter && chain.length >= limit) break scan;
         }
-        if (records.length < SNAPSHOT_BATCH) break;
+        if (records.length < SNAPSHOT_BATCH) {
+          reachedEnd = true;
+          break;
+        }
         skip += records.length;
       }
       if (!filter) return chain.slice(0, limit);
-      const args = ["log", "-z", "--first-parent", "--no-color", `--max-count=${boundary ? limit : SNAPSHOT_SCAN_LIMIT}`, format, ref];
+      const args = ["log", "-z", "--first-parent", "--no-color", `--max-count=${limit}`, format, ref];
+      // Bound the query to the snapshot range: stop at the boundary, or at the oldest commit scanned
+      // when the scan cap was hit, so it never walks into the user's history.
       if (boundary) args.push(`^${boundary}`);
+      else if (!reachedEnd && lastScanned) args.push(`^${lastScanned}^`);
       args.push("--", filter);
       const found = await git.run(args, run(real, deps.localTimeoutMs, options.signal));
       if (found.code !== 0) throw new RestoreRefusedError("bad-snapshot", "that backup branch has not been fetched; list the backups first");
@@ -395,9 +437,12 @@ export function createRestoreApi(deps: RestoreDeps): RestoreApi {
         }
         for (let i = 0; i < names.length; i += 1) {
           const file = join(dir, names[i]![names[i]!.length - 1]!);
-          const done = async (state: RestoreResult["state"]): Promise<RestoreResult> => {
+          const done = async (state: RestoreResult["state"], mine?: { dev: number; ino: number }): Promise<RestoreResult> => {
             const result: RestoreResult = { state, path: names[i]!.join("/"), sibling: i > 0, bytes: bytes.length };
-            if (state === "restored") await checkStillInside(file);
+            if (state === "restored") {
+              await restoreTestHooks.afterPublish?.(file);
+              await checkStillInside(file, mine!);
+            }
             return result;
           };
           // Twice: a file that appears between the check and the publish is looked at once more.
@@ -408,16 +453,24 @@ export function createRestoreApi(deps: RestoreDeps): RestoreApi {
             temp ??= await stage(dir, bytes, executable);
             await restoreTestHooks.beforePublish?.(file);
             if (overwrite) {
+              const mine = await lstat(temp);
               await rename(temp, file);
               temp = null;
-              return await done("restored");
+              return await done("restored", mine);
             }
-            if (await publishNew(temp, file)) return await done("restored");
+            const published = await publishNew(temp, file, bytes, executable ? 0o755 : 0o644);
+            if (published) return await done("restored", published);
           }
           if (explicit) throw new RestoreRefusedError("target-exists", "the target has different content; choose another name or set overwrite");
         }
         throw new RestoreRefusedError("target-exists", "restored copies with this name already exist and differ");
       } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENAMETOOLONG") {
+          if (temp) await rm(temp, { force: true });
+          temp = null;
+          await removeCreated(created);
+          throw new RestoreRefusedError("name-too-long", NAME_TOO_LONG);
+        }
         // The temp file goes first: a created folder is only removed when empty.
         if (temp) await rm(temp, { force: true });
         temp = null;
@@ -427,12 +480,13 @@ export function createRestoreApi(deps: RestoreDeps): RestoreApi {
         if (temp) await rm(temp, { force: true });
       }
 
-      async function checkStillInside(file: string): Promise<void> {
-        // A folder swapped for a symlink during the write must not leave a file outside the worktree.
-        if (!(await insideRoot(real, dirname(file)).catch(() => false))) {
-          await rm(file, { force: true });
-          throw new RestoreRefusedError("beyond-symlink", "the target folder is not inside the folder");
-        }
+      async function checkStillInside(file: string, mine: { dev: number; ino: number }): Promise<void> {
+        if (await insideRoot(real, dirname(file)).catch(() => false)) return;
+        // A folder was swapped for a symlink after the write. Delete only the very file we published
+        // (same device and inode); a same-named file elsewhere is never touched.
+        const now = await lstat(file).catch(() => null);
+        if (now && now.dev === mine.dev && now.ino === mine.ino) await rm(file, { force: true });
+        throw new RestoreRefusedError("beyond-symlink", "the target folder is not inside the folder");
       }
     },
   };
