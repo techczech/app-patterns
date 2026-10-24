@@ -9,6 +9,9 @@
  * Symlinks: a symlink is listed as a leaf (stored as a link, never followed). The walk never descends
  * through a symlinked directory, and a literal base whose path passes through a symlinked directory is
  * skipped with reason "beyond-symlink" (Git refuses such paths for the same reason).
+ *
+ * Absence is reported only when the file system says a path does not exist (ENOENT, ENOTDIR). A folder
+ * that exists but cannot be read is listed in `unreadable`, so a caller never mistakes it for a deletion.
  */
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
@@ -130,7 +133,16 @@ export interface ScopeListing {
   files: string[];
   /** Include bases (or walked directories) that were not traversed because they lie beyond a symlink. */
   skipped: SkippedPath[];
+  /** Folders (worktree-relative, "" for the root) that exist but could not be listed; their contents are unknown. */
+  unreadable: string[];
+  /** Folders that were listed completely. */
+  listed: string[];
 }
+
+const gone = (error: unknown) => {
+  const code = (error as NodeJS.ErrnoException).code;
+  return code === "ENOENT" || code === "ENOTDIR";
+};
 
 /** Lists scoped regular files and symlinks under root, as sorted worktree-relative POSIX paths. */
 export async function listScopedFiles(root: string, scope: CompiledScope): Promise<string[]> {
@@ -142,6 +154,8 @@ export async function listScope(root: string, scope: CompiledScope): Promise<Sco
   const found = new Set<string>();
   const visited = new Set<string>();
   const skipped = new Map<string, SkippedPath>();
+  const unreadable = new Set<string>();
+  const listed = new Set<string>();
   const realRoot = await realpath(root);
   const skip = (path: string) => {
     if (!skipped.has(path)) skipped.set(path, { path, reason: "beyond-symlink" });
@@ -157,15 +171,18 @@ export async function listScope(root: string, scope: CompiledScope): Promise<Sco
         skip(rel);
         return;
       }
-    } catch {
+    } catch (error) {
+      if (!gone(error)) unreadable.add(rel);
       return;
     }
     let entries;
     try {
       entries = await readdir(dir, { withFileTypes: true });
-    } catch {
+    } catch (error) {
+      if (!gone(error)) unreadable.add(rel);
       return;
     }
+    listed.add(rel);
     for (const entry of entries) {
       const name = entry.name;
       if (name === ".git") continue;
@@ -198,7 +215,8 @@ export async function listScope(root: string, scope: CompiledScope): Promise<Sco
         let info;
         try {
           info = await lstat(join(root, ...parts.slice(0, i)));
-        } catch {
+        } catch (error) {
+          if (!gone(error)) unreadable.add(prefix);
           blocked = true;
           break;
         }
@@ -214,7 +232,8 @@ export async function listScope(root: string, scope: CompiledScope): Promise<Sco
     let info;
     try {
       info = await lstat(join(root, ...parts));
-    } catch {
+    } catch (error) {
+      if (!gone(error)) unreadable.add(base);
       continue;
     }
     if (info.isDirectory()) {
@@ -223,7 +242,12 @@ export async function listScope(root: string, scope: CompiledScope): Promise<Sco
       found.add(base);
     }
   }
-  return { files: [...found].sort(), skipped: [...skipped.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)) };
+  return { files: [...found].sort(), skipped: [...skipped.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)), unreadable: [...unreadable].sort(), listed: [...listed].sort() };
+}
+
+/** Under an unreadable folder, or the folder itself. */
+export function underAny(path: string, folders: readonly string[]): boolean {
+  return folders.some((folder) => folder === "" || path === folder || path.startsWith(`${folder}/`));
 }
 
 async function isNestedRepo(dir: string): Promise<boolean> {
@@ -231,6 +255,7 @@ async function isNestedRepo(dir: string): Promise<boolean> {
     await lstat(join(dir, ".git"));
     return true;
   } catch {
+    // An unreadable folder is reported by the walk when it fails to list it.
     return false;
   }
 }

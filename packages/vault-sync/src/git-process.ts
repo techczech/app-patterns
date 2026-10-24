@@ -6,10 +6,18 @@
  * - the caller's GIT_* environment is dropped (it could redirect the repository, index or object store),
  *   except a small transport allow-list; terminal prompts are off;
  * - every invocation carries config overrides that keep Git from running repository hooks, the
- *   file-system monitor or automatic maintenance on the engine's behalf;
+ *   file-system monitor, automatic maintenance or signature checks on the engine's behalf, and that limit
+ *   what the repository's configuration can make Git execute: the repository's credential helpers and
+ *   askpass program are cleared, and only the helpers the caller names in `credentialHelpers` run;
+ * - only the file and HTTPS transports are allowed (no SSH command, proxy command or remote helper). This
+ *   is set with GIT_ALLOW_PROTOCOL after every other environment value, because Git lets a
+ *   protocol-specific setting such as `protocol.ext.allow` in repository configuration override
+ *   `protocol.allow`, but nothing overrides GIT_ALLOW_PROTOCOL; replacement refs and grafts are ignored;
+ * - network operations do not run here against the repository's configuration at all: see transport.ts;
  * - stderr is capped and credentials in URLs are redacted before it leaves this module.
  */
 import { spawn } from "node:child_process";
+import { devNull } from "node:os";
 
 export type GitFailureKind = "timeout" | "aborted" | "output-limit" | "spawn" | "exit";
 
@@ -52,6 +60,13 @@ export interface GitRunner {
 }
 
 const STDERR_CAP = 16 * 1024;
+/** The only transports Git may use for the engine; set last, so nothing configured can widen it. */
+export const ALLOWED_PROTOCOLS = "file:https";
+/**
+ * Set last on every call. Replacement refs and a grafts file would make Git read a different history
+ * than the objects it stores, so what the engine checks and scans could differ from what a push sends.
+ */
+const ENFORCED_ENV = { GIT_ALLOW_PROTOCOL: ALLOWED_PROTOCOLS, GIT_NO_REPLACE_OBJECTS: "1", GIT_GRAFT_FILE: devNull };
 const KEEP_ENV = new Set(["GIT_ASKPASS", "GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSL_CAINFO", "GIT_SSL_CAPATH", "GIT_EXEC_PATH"]);
 
 /** Removes user:password@ and token@ parts from URLs in a message. */
@@ -78,6 +93,12 @@ export interface GitRunnerConfig {
   hooksDir: string;
   /** Environment passed through after the scrub on every call (tests use it to isolate global config). */
   env?: Record<string, string>;
+  /**
+   * Credential helpers Git may run for HTTPS, as `credential.helper` values (for example "osxkeychain").
+   * These are trusted by the caller; every helper configured by the repository or the user's Git
+   * configuration is cleared first. Default none.
+   */
+  credentialHelpers?: readonly string[];
 }
 
 export function createGitRunner(config: GitRunnerConfig): GitRunner {
@@ -87,6 +108,16 @@ export function createGitRunner(config: GitRunnerConfig): GitRunner {
     "-c", "core.fsmonitor=false",
     "-c", "gc.auto=0",
     "-c", "maintenance.auto=false",
+    "-c", "log.showSignature=false",
+    "-c", "protocol.allow=never",
+    "-c", "protocol.file.allow=always",
+    "-c", "protocol.https.allow=always",
+    "-c", "core.askPass=",
+    "-c", "credential.helper=",
+    ...(config.credentialHelpers ?? []).flatMap((helper) => {
+      if (typeof helper !== "string" || helper === "" || /[\0\n]/.test(helper)) throw new Error("a credential helper must be a non-empty single-line string");
+      return ["-c", `credential.helper=${helper}`];
+    }),
   ];
 
   const run = (args: readonly string[], options: GitRunOptions): Promise<GitResult> =>
@@ -100,7 +131,7 @@ export function createGitRunner(config: GitRunnerConfig): GitRunner {
       try {
         child = spawn(gitPath, [...prefix, ...args], {
           cwd: options.cwd,
-          env: scrubbedEnv(process.env, { ...config.env, ...options.env }),
+          env: { ...scrubbedEnv(process.env, { ...config.env, ...options.env }), ...ENFORCED_ENV },
           stdio: ["pipe", "pipe", "pipe"],
           shell: false,
           windowsHide: true,

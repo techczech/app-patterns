@@ -2,8 +2,11 @@
  * Secret scanning before a backup push. The engine's commits are made with plumbing, so no commit hook
  * ever scans them; this module does it instead.
  *
- * - `collectPushBlobs` lists the blobs a push would add: everything reachable from the new snapshot
- *   (including user commits reached through a HEAD parent) and not from the last verified snapshot.
+ * - `collectPushBlobs` lists every blob reachable from the snapshot about to be pushed: the whole backup
+ *   chain, every time. Nothing (remote-tracking refs, earlier receipts, what the destination advertises)
+ *   is taken as evidence that the destination already holds something, because a destination can drop a
+ *   ref between any listing and the push, and Git then sends those objects again. The cost grows with the
+ *   chain; the total-size limit holds the push back rather than skipping any of it.
  * - A scanner is a function from blobs to findings. Findings carry a path and a rule id only; nothing
  *   here ever returns, logs or throws secret text or file contents.
  * - `createGitleaksScanner` materialises the blobs in a private temporary folder, runs
@@ -50,10 +53,6 @@ export interface CollectOptions {
   git: GitRunner;
   run: GitRunOptions;
   newTip: string;
-  /** Snapshots already on the remote; their objects are not scanned again. */
-  remoteKnown: readonly string[];
-  /** Remote-tracking ref patterns (`refs/remotes/<name>/*`) whose objects the remote already holds. */
-  remoteTrackingGlob?: string;
   maxBlobBytes: number;
   /** Upper bound on the bytes held for one scan. */
   maxTotalBytes: number;
@@ -62,10 +61,7 @@ export interface CollectOptions {
 /** Needs Git 2.47 or later (`rev-list -z`). A failure here blocks the push rather than skipping the scan. */
 export async function collectPushBlobs(options: CollectOptions): Promise<PushBlobs> {
   const { git, run } = options;
-  const args = ["rev-list", "-z", "--objects", options.newTip];
-  if (options.remoteKnown.length > 0 || options.remoteTrackingGlob) args.push("--not", ...options.remoteKnown);
-  if (options.remoteTrackingGlob) args.push(`--glob=${options.remoteTrackingGlob}`);
-  const tokens = splitNul(await git.ok(args, run));
+  const tokens = splitNul(await git.ok(["rev-list", "-z", "--objects", "--stdin"], { ...run, input: Buffer.from(`${options.newTip}\n`, "utf8") }));
   const paths = new Map<string, string>();
   const order: string[] = [];
   let last: string | null = null;
@@ -84,9 +80,13 @@ export async function collectPushBlobs(options: CollectOptions): Promise<PushBlo
   const result: PushBlobs = { blobs: [], notScanned: [], overTotal: false };
   let total = 0;
   const seen = new Set<string>();
+  const wanted: { oid: string; size: number; path: string }[] = [];
   for (const line of check.split("\n")) {
     const [oid, type, sizeText] = line.split(" ");
-    if (!oid || type !== "blob" || seen.has(oid)) continue;
+    if (!oid) continue;
+    // Every listed object must exist here; a missing one would otherwise be left out of the scan.
+    if (type === "missing") throw new Error("an object to be sent is missing from this repository");
+    if (type !== "blob" || seen.has(oid)) continue;
     seen.add(oid);
     const size = Number(sizeText);
     const path = paths.get(oid) ?? oid;
@@ -100,8 +100,25 @@ export async function collectPushBlobs(options: CollectOptions): Promise<PushBlo
       result.blobs = [];
       return result;
     }
-    const bytes = await git.ok(["cat-file", "blob", oid], run);
-    result.blobs.push({ path, oid, bytes });
+    wanted.push({ oid, size, path });
+  }
+  // Read in batches, one git process each, each batch's output kept under the run's output limit.
+  const budget = Math.max(1, Math.floor(run.maxOutputBytes / 2));
+  for (let start = 0; start < wanted.length;) {
+    let end = start;
+    let bytes = 0;
+    while (end < wanted.length && (end === start || bytes + wanted[end]!.size + 128 <= budget)) bytes += wanted[end++]!.size + 128;
+    const batch = wanted.slice(start, end);
+    const out = await git.ok(["cat-file", "--batch"], { ...run, input: Buffer.from(`${batch.map((b) => b.oid).join("\n")}\n`, "utf8") });
+    let at = 0;
+    for (const item of batch) {
+      const eol = out.indexOf(0x0a, at);
+      const header = eol < 0 ? "" : out.subarray(at, eol).toString("utf8");
+      if (header !== `${item.oid} blob ${item.size}` || out.length < eol + 1 + item.size + 1) throw new Error("git returned an unexpected object while reading blobs to scan");
+      result.blobs.push({ path: item.path, oid: item.oid, bytes: Buffer.from(out.subarray(eol + 1, eol + 1 + item.size)) });
+      at = eol + 1 + item.size + 1;
+    }
+    start = end;
   }
   return result;
 }

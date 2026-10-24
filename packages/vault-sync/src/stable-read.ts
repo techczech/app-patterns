@@ -3,10 +3,12 @@
  *
  * Each attempt stats the path, reads through one descriptor, re-stats the descriptor and the path, and
  * accepts the bytes only if size, mtime, ctime, inode and device are unchanged and the last change is at
- * least `settleMs` old. A writer that truncates and then writes therefore yields either the old or the new
- * full content, or (after the bounded retries) a "pending" outcome. A writer that leaves a file truncated
- * for longer than `settleMs` cannot be told apart from a deliberately emptied file; writers should replace
- * files atomically.
+ * least `settleMs` old. This rejects bytes from a write that is visibly in progress. It cannot prove that
+ * a write is complete: a writer that truncates or writes part of a file and then pauses for longer than
+ * `settleMs` leaves bytes that look settled. Supported writers therefore either replace files atomically
+ * (write a temporary file, then rename it over the target) or coordinate with the engine (`noteWriteStart`
+ * before writing in place, `noteFlush` with the returned write token after), in which case the engine does not read the file meanwhile.
+ * See the writer contract in engine.ts.
  *
  * Containment: when `root` is given, the path must lie inside it with every intermediate component a
  * real directory (never a symlink), checked before each attempt, and after the file is opened the real
@@ -39,7 +41,7 @@ export interface StableReadOptions {
 
 const OPEN_FLAGS = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0);
 
-export type Containment = "ok" | "missing" | "beyond-symlink";
+export type Containment = "ok" | "missing" | "unreadable" | "beyond-symlink";
 
 /**
  * Checks that `path` lies inside `root` (a real path) and that every intermediate component is a real
@@ -56,8 +58,9 @@ export async function checkContainment(root: string, path: string): Promise<Cont
     let info;
     try {
       info = await lstat(current);
-    } catch {
-      return "missing";
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      return code === "ENOENT" || code === "ENOTDIR" ? "missing" : "unreadable";
     }
     if (info.isSymbolicLink()) return "beyond-symlink";
     if (!info.isDirectory()) return "missing";

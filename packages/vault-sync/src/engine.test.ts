@@ -219,13 +219,16 @@ describe("deadline record", () => {
     let clock = Date.UTC(2026, 0, 10, 12, 0, 0);
     const now = () => clock;
     let first: ReturnType<typeof engine> | null = engine({ now });
-    await first.noteEdit(repo, clock - 30_000);
+    const ticket = await first.noteEdit(repo, clock - 30_000, { path: "notes/a.md" });
     first = null;
 
     const second = engine({ now });
     let status = await second.status(repo);
     expect(status.oldestUnprotectedEdit).toBe(clock - 30_000);
     expect(status.protectionAgeSeconds).toBe(30);
+    expect(status.unflushedEditSince).toBe(clock - 30_000);
+    // The editor's save of that edit, acknowledged before the capture below.
+    await second.noteFlush(repo, { upTo: ticket, paths: ["notes/a.md"] });
 
     // The remote becomes unreachable without its configured address changing (which would void enablement).
     renameSync(remote, `${remote}.away`);
@@ -266,15 +269,16 @@ describe("deadline record", () => {
     put(repo, "notes/a.md", "a\n");
     let clock = Date.UTC(2026, 0, 10, 12, 0, 0);
     const e = engine({ now: () => clock });
-    const captured = await e.capture(repo, { include: ["notes"] });
+    await e.capture(repo, { include: ["notes"] });
     clock += 5_000;
-    await e.noteEdit(repo, clock);
+    const edited = clock;
+    await e.noteEdit(repo, edited);
     expect((await e.pushBackup(repo)).state).toBe("pushed");
     expect((await e.verify(repo)).verified).toBe(true);
     clock += 20_000;
     const status = await e.status(repo);
-    expect(status.oldestUnprotectedEdit).toBe(captured.startedAt);
-    expect(status.protectionAgeSeconds).toBe(25);
+    expect(status.oldestUnprotectedEdit).toBe(edited);
+    expect(status.protectionAgeSeconds).toBe(20);
   }, 30_000);
 
   test("a damaged record is kept aside and treated as unprotected, never as protected", async () => {
@@ -325,18 +329,26 @@ describe("backup branches", () => {
     expect(gitText(repo, ["for-each-ref", "--format=%(refname)", "refs/heads/backup/"]).split("\n")).toHaveLength(2);
   }, 30_000);
 
-  test("a user commit made after the last snapshot becomes the next snapshot's second parent", async () => {
-    const { repo } = setup();
+  test("snapshots have only earlier snapshots as parents; the user's commits are never published (review finding 3)", async () => {
+    const { repo, remote } = setup();
     put(repo, "notes/a.md", "a0\n");
+    put(repo, ".writeflex/owner.lock", "synthetic coordination state\n");
     commitAll(repo, "start");
+    const head = gitText(repo, ["rev-parse", "HEAD"]);
     const e = engine();
     const s1 = await e.capture(repo, { include: ["notes"] });
+    expect(gitText(repo, ["rev-list", "--parents", "-n", "1", s1.snapshot!]).split(" ").slice(1)).toEqual([]);
     put(repo, "notes/a.md", "a1\n");
     commitAll(repo, "user edit");
-    const head = gitText(repo, ["rev-parse", "HEAD"]);
     put(repo, "notes/a.md", "a2\n");
     const s2 = await e.capture(repo, { include: ["notes"] });
-    expect(gitText(repo, ["rev-list", "--parents", "-n", "1", s2.snapshot!]).split(" ").slice(1)).toEqual([s1.snapshot!, head]);
+    expect(gitText(repo, ["rev-list", "--parents", "-n", "1", s2.snapshot!]).split(" ").slice(1)).toEqual([s1.snapshot!]);
+    expect((await e.pushBackup(repo)).state).toBe("pushed");
+    // The remote received no user commit and no blob outside the scope.
+    const received = gitText(dirname(remote), ["--git-dir", remote, "rev-list", "--objects", "--all"]);
+    expect(received).not.toContain(head);
+    expect(received).not.toContain(".writeflex");
+    expect(() => git(dirname(remote), ["--git-dir", remote, "cat-file", "-e", head])).toThrow();
   }, 30_000);
 
   test("paths with spaces, Unicode, tabs and newlines round-trip through capture and push", async () => {

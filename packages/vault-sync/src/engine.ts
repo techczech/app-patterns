@@ -5,35 +5,64 @@
  * Invariants:
  * - HEAD, the user's index, staged state and worktree files are never written. Capture uses only
  *   plumbing with GIT_INDEX_FILE pointing at the engine's own index, and updates only the backup ref.
+ * - A snapshot's parents are only earlier snapshots. The user's commits are never parents, so a push
+ *   publishes only content that was inside the backup scope when it was captured; publishing the user's
+ *   history needs a separate consent and history check that this engine does not offer. A chain the
+ *   engine did not make entirely (chain.ts) is neither extended nor pushed: "unsupported-history".
  * - Pushes are never forced; one checkout is the only writer of its chain, so a rejection is an error.
- * - Only `ls-remote` showing the pushed object id counts as verified, and only verification moves the
- *   oldest unprotected edit forward.
+ * - Each push, verification and restore fetch validates the destination once at its start and then uses
+ *   that literal address in the engine's own transport context (transport.ts), where no repository or
+ *   user Git configuration applies. Only `ls-remote` at that address showing the pushed object id counts
+ *   as verified, and only verification resolves an edit (deadline.ts).
  * - Guards run on every operation: a worktree in a cloud-synced folder or on a network mount is refused;
- *   capture, push and verify need an enablement record that still matches the folder and remote; a push
- *   also needs a private (or explicitly confirmed public) remote and a clean secret scan. A refusal
- *   writes no Git object or ref and leaves the deadline as it was.
+ *   capture, push and verify need an enablement record that still matches the folder and destination; a
+ *   push also needs a private (or explicitly confirmed public) remote and a clean secret scan of every
+ *   blob reachable from the snapshot it sends, the whole chain each time. A refusal writes no Git object or
+ *   ref and leaves the deadline as it was.
+ *
+ * Writer contract. Stable reads reject a write that is visibly in progress but cannot prove a write is
+ * complete. A writer is supported when it either replaces files atomically (temporary file, then rename),
+ * or calls `noteWriteStart(paths)` before writing in place and `noteFlush` with its returned path/token
+ * receipts once the bytes are durable;
+ * the engine then keeps those paths at their previous snapshot version, including in any capture that was
+ * reading while the write started or finished. An edit is reported with `noteEdit`, which returns its
+ * ticket; a save is acknowledged with `noteFlush`, naming the saved paths (or all documents) and the newest
+ * ticket the saved bytes contain. Edits are protected only through that acknowledgement, a capture that
+ * started after it, and verification; reporting an edit never counts as saving it, and acknowledging one
+ * document never counts for another. Edits the engine finds on disk without a report are protected from
+ * the capture that read them.
  */
-import { createHash } from "node:crypto";
 import { devNull, homedir } from "node:os";
-import { access, lstat, readdir, realpath, rm, stat } from "node:fs/promises";
+import { access, readdir, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
-import { backupPrefix, backupRef, latestDayRef, validateId } from "./backup-ref.ts";
+import { backupPrefix, validateId } from "./backup-ref.ts";
 import { BackupRefusedError, type BackupBlock, type BlockReason } from "./blocks.ts";
+import { captureSnapshot, latestSnapshot, type CaptureDeps, type CaptureResult, type RepoContext } from "./capture.ts";
+import { chainProblem } from "./chain.ts";
+import { checkDestination, type Destination } from "./destination.ts";
 import { readEnablement, removeEnablement, urlDigest, writeEnablement, type EnablementRecord } from "./enablement.ts";
 import { defaultMountInfo, isCloudSyncedLocation, isNetworkMount, type MountInfoReader } from "./location.ts";
 import { collectPushBlobs, createGitleaksScanner, describeFindings, type NotScannedBlob, type SecretFinding, type SecretScanner, type SecretScanResult } from "./secret-scan.ts";
-import { applyCapture, applyPushed, applyVerified, noteEdit as noteEditInRecord, protectionAgeSeconds, withBlock, withError, type BackupErrorRecord, type DeadlineRecord, type SnapshotCoverage } from "./deadline.ts";
-import { checkoutId as readCheckoutId, engineFolder, ensureEngineFolder, loadRecord, saveRecord, withFolderLock, type EngineFolder } from "./engine-store.ts";
-import { createGitRunner, GitProcessError, splitNul, type GitRunner } from "./git-process.ts";
+import { applyPushed, applyVerified, noteEdit as noteEditInRecord, noteFlush as noteFlushInRecord, noteWriteStart as noteWriteStartInRecord, protectionAgeSeconds, withBlock, withError, type BackupErrorRecord, type DeadlineRecord, type EditTicket, type WriteToken, type FlushAcknowledgement, type SnapshotCoverage } from "./deadline.ts";
+import { checkoutId as readCheckoutId, engineFolder, ensureEngineFolder, loadRecord, saveRecord, withFolderLock } from "./engine-store.ts";
+import { createGitRunner, type GitRunner } from "./git-process.ts";
 import { createRestoreApi, type RestoreApi } from "./restore.ts";
-import { compileScope, listScope, type BackupScope, type SkippedPath } from "./scope.ts";
-import { checkContainment, readStable, statKey, type GitFileMode } from "./stable-read.ts";
+import { lsRemoteAt, pushIn, withTransport, type ObjectStore, type TransportContext } from "./transport.ts";
+import type { BackupScope } from "./scope.ts";
+
+export type { CaptureResult, PendingFile, SkippedFile } from "./capture.ts";
 
 export interface BackupEngineOptions {
   /** Stable id of this machine, used in backup branch names. */
   machineId: string;
-  /** Configured remote name to push backup branches to. Default "origin". */
+  /** Configured remote name to push backup branches to. Default "origin". See destination.ts for supported set-ups. */
   remote?: string;
+  /**
+   * Credential helpers Git may run for an HTTPS destination, as `credential.helper` values (for example
+   * "osxkeychain"). The app vouches for these; helpers configured in the repository or the user's Git
+   * configuration never run. Default none.
+   */
+  trustedCredentialHelpers?: readonly string[];
   /** Clock for edit, capture and commit times (milliseconds). Default Date.now. */
   now?: () => number;
   /** A file whose last change is younger than this is re-read later. Default 250 ms. */
@@ -60,8 +89,8 @@ export interface BackupEngineOptions {
   /** Mount lookup for the network-mount rule. Default reads the platform's mount table. */
   mountInfo?: MountInfoReader;
   /**
-   * Visibility of a remote, given its push URL (which may carry credentials; do not log it). Default
-   * answers "unknown", so pushes stay held back until an app supplies a real check.
+   * Visibility of a remote, given the address the engine will push to (which may carry credentials; do
+   * not log it). Default answers "unknown", so pushes stay held back until an app supplies a real check.
    */
   remoteVisibility?: (remoteUrl: string) => Promise<RemoteVisibility>;
   /** A definite visibility answer is reused for this long. Default 10 minutes. */
@@ -70,7 +99,7 @@ export interface BackupEngineOptions {
   secretScanner?: SecretScanner;
   /** Blobs above this size are not scanned. Default 10 MiB. */
   maxScanBlobBytes?: number;
-  /** A push whose new blobs together exceed this is held back as too large to scan. Default 512 MiB. */
+  /** A push whose chain's blobs together exceed this is held back as too large to scan. Default 512 MiB. */
   maxScanTotalBytes?: number;
 }
 
@@ -91,30 +120,6 @@ export interface EnableResult {
 
 export interface OperationOptions {
   signal?: AbortSignal;
-}
-
-export interface PendingFile {
-  path: string;
-  reason: "unstable" | "too-large" | "unreadable";
-}
-
-/**
- * A scoped path (or include base) that lies beyond a symlinked directory. It is never read; if it was in
- * the previous snapshot it is removed from the next one rather than kept with bytes from outside.
- */
-export type SkippedFile = SkippedPath;
-
-export interface CaptureResult {
-  committed: boolean;
-  snapshot: string | null;
-  ref: string | null;
-  startedAt: number;
-  added: string[];
-  modified: string[];
-  removed: string[];
-  pending: PendingFile[];
-  /** Paths not captured because they lie beyond a symlinked directory. */
-  skipped: SkippedFile[];
 }
 
 export type PushResult =
@@ -140,6 +145,12 @@ export interface BackupStatus {
   latestRef: string | null;
   lastPushed: SnapshotCoverage | null;
   pending: string[];
+  /** Folders in scope the last captures could not list ("" for the worktree root); their contents are unknown. */
+  unlistedFolders: string[];
+  /** Earliest edit reported with `noteEdit` that has no save acknowledgement yet; null when none. */
+  unflushedEditSince: number | null;
+  /** Paths a coordinated writer is writing in place (between `noteWriteStart` and `noteFlush`). */
+  writing: string[];
   lastError: BackupErrorRecord | null;
   recoveredFromDamagedRecord: boolean;
   /** Hooks present in the repository that the engine does not run. */
@@ -160,29 +171,32 @@ export interface BackupEngine extends RestoreApi {
   capture(repo: string, scope: BackupScope, options?: OperationOptions): Promise<CaptureResult>;
   pushBackup(repo: string, options?: OperationOptions): Promise<PushResult>;
   verify(repo: string, options?: OperationOptions): Promise<VerifyResult>;
-  noteEdit(repo: string, time: number | Date): Promise<void>;
+  /**
+   * Reports an edit made at `time` (used only to measure its age) to the document at `path`, or, without
+   * a path, an edit anywhere in the folder. Resolves with the edit's ticket. The edit stays unprotected
+   * until a save acknowledgement covering its ticket and path, a later capture and its verification. An
+   * edit reported without a path is covered only by an acknowledgement for all documents.
+   */
+  noteEdit(repo: string, time: number | Date, options?: { path?: string }): Promise<EditTicket>;
+  /**
+   * Reports a durable save: the named paths (or, with `allDocuments`, every document) are on disk and
+   * contain every edit reported for them with ticket `upTo` or earlier. Ends only the coordinated intervals named by matching `completedWrites` path/token receipts.
+   */
+  noteFlush(repo: string, ack: FlushAcknowledgement): Promise<void>;
+  /** Reports that a writer starts writing these worktree-relative paths in place; returns the interval token to supply in `noteFlush.completedWrites`. */
+  noteWriteStart(repo: string, paths: readonly string[]): Promise<WriteToken>;
   status(repo: string, options?: OperationOptions): Promise<BackupStatus>;
 }
 
-interface RepoContext {
-  root: string;
-  commonDir: string;
-  folder: EngineFolder;
-  checkoutId: string;
-  prefix: string;
-  objectFormat: "sha1" | "sha256";
-  zeroOid: string;
-  git: GitRunner;
-  cache: Map<string, { key: string; oid: string; mode: GitFileMode }>;
-}
-
-interface TreeEntry {
-  mode: string;
-  oid: string;
-}
-
 const REMOTE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
-const CACHE_MIN_AGE_MS = 2000;
+
+/** A worktree-relative POSIX path as the scope reports it: no empty, "." or ".." parts, no NUL. */
+function checkedPath(path: string): string {
+  if (typeof path !== "string" || path === "" || path.includes("\0") || path.startsWith("/") || path.split("/").some((p) => p === "" || p === "." || p === "..")) {
+    throw new Error("paths must be worktree-relative, like notes/a.md");
+  }
+  return path;
+}
 
 export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
   const machineId = validateId("machine id", options.machineId);
@@ -205,6 +219,8 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
   const secretScanner = options.secretScanner ?? createGitleaksScanner();
   const maxScanBlobBytes = options.maxScanBlobBytes ?? 10 * 1024 * 1024;
   const maxScanTotalBytes = options.maxScanTotalBytes ?? 512 * 1024 * 1024;
+  const credentialHelpers = [...(options.trustedCredentialHelpers ?? [])];
+  const runner = (hooksDir: string) => createGitRunner({ gitPath: options.gitPath, hooksDir, env: options.gitEnv, credentialHelpers });
 
   const contexts = new Map<string, Promise<RepoContext>>();
   const queues = new Map<string, Promise<unknown>>();
@@ -213,7 +229,10 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
   let homeDirs: Promise<string[]> | null = null;
 
   const local = (ctx: RepoContext, signal?: AbortSignal, env?: Record<string, string>) => ({ cwd: ctx.root, timeoutMs: localTimeoutMs, maxOutputBytes, signal, env });
-  const network = (ctx: RepoContext, signal?: AbortSignal) => ({ cwd: ctx.root, timeoutMs: networkTimeoutMs, maxOutputBytes, signal });
+  const localLimits = (signal?: AbortSignal) => ({ timeoutMs: localTimeoutMs, maxOutputBytes, signal });
+  const networkLimits = (signal?: AbortSignal) => ({ timeoutMs: networkTimeoutMs, maxOutputBytes, signal });
+  const objectStore = (commonDir: string, format: "sha1" | "sha256"): ObjectStore => ({ objectsDir: join(commonDir, "objects"), format });
+  const storeOf = (ctx: RepoContext) => objectStore(ctx.commonDir, ctx.objectFormat);
 
   async function realRoot(repo: string): Promise<string> {
     if (typeof repo !== "string" || !isAbsolute(repo)) throw new Error("repo must be an absolute path to a worktree root");
@@ -222,7 +241,7 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
 
   /** Reads the repository layout without writing anything. */
   async function locate(real: string): Promise<{ gitDir: string; common: string; format: "sha1" | "sha256" }> {
-    const probe = createGitRunner({ gitPath: options.gitPath, hooksDir: devNull, env: options.gitEnv });
+    const probe = runner(devNull);
     const probeOptions = { cwd: real, timeoutMs: localTimeoutMs, maxOutputBytes: 64 * 1024 };
     const bare = (await probe.ok(["rev-parse", "--is-bare-repository"], probeOptions)).toString("utf8").trim();
     if (bare !== "false") throw new Error("bare repositories are not supported");
@@ -246,7 +265,7 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
       prefix: backupPrefix(machineId, checkoutId),
       objectFormat: format,
       zeroOid: "0".repeat(format === "sha1" ? 40 : 64),
-      git: createGitRunner({ gitPath: options.gitPath, hooksDir: folder.hooksDir, env: options.gitEnv }),
+      git: runner(folder.hooksDir),
       cache: new Map(),
     };
   }
@@ -312,29 +331,31 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
     return { ctx: await context(real) };
   }
 
-  async function remoteUrls(ctx: RepoContext, name: string, signal?: AbortSignal): Promise<{ fetch: string; push: string } | null> {
-    const fetch = await ctx.git.run(["remote", "get-url", name], local(ctx, signal));
-    const push = await ctx.git.run(["remote", "get-url", "--push", name], local(ctx, signal));
-    if (fetch.code !== 0 || push.code !== 0) return null;
-    return { fetch: fetch.stdout.toString("utf8").trim(), push: push.stdout.toString("utf8").trim() };
+  /** The validated destination for a remote name, or why it cannot be used. */
+  async function destinationOf(git: GitRunner, root: string, name: string, signal?: AbortSignal): Promise<{ destination: Destination } | { block: BackupBlock }> {
+    const checked = await checkDestination(git, { cwd: root, timeoutMs: localTimeoutMs, maxOutputBytes, signal }, name, platform);
+    if ("missing" in checked) return { block: block("enablement-stale", `the backup remote ${name} is not configured in this repository`) };
+    if ("unsupported" in checked) return { block: block("unsupported-remote", checked.unsupported) };
+    return checked;
   }
 
   interface Enabled {
     record: EnablementRecord;
-    pushUrl: string;
+    destination: Destination;
   }
 
-  /** The enablement record must exist and still match the folder's real path and the remote's URLs. */
+  /** The enablement record must exist and still match the folder's real path and the validated destination's address. */
   async function enablementState(ctx: RepoContext, signal?: AbortSignal): Promise<{ enabled: Enabled } | { block: BackupBlock }> {
     const record = await readEnablement(ctx.folder.enablementFile);
     if (!record) return { block: notEnabled() };
     if (record.realPath !== ctx.root) return { block: block("enablement-stale", "this folder was moved or renamed after automatic backup was turned on; turn it on again here") };
-    const urls = await remoteUrls(ctx, record.remote, signal);
-    if (!urls) return { block: block("enablement-stale", "the backup remote is no longer configured; turn automatic backup on again") };
-    if (urlDigest(urls.fetch) !== record.fetchUrlDigest || urlDigest(urls.push) !== record.pushUrlDigest) {
+    const found = await destinationOf(ctx.git, ctx.root, record.remote, signal);
+    if ("block" in found) return found;
+    const digest = urlDigest(found.destination.url);
+    if (digest !== record.fetchUrlDigest || digest !== record.pushUrlDigest) {
       return { block: block("enablement-stale", "the backup remote's address changed after automatic backup was turned on; turn it on again") };
     }
-    return { enabled: { record, pushUrl: urls.push } };
+    return { enabled: { record, destination: found.destination } };
   }
 
   async function checkVisibility(ctx: RepoContext, digest: string, pushUrl: string, force: boolean): Promise<RemoteVisibility> {
@@ -360,18 +381,15 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
     return null;
   }
 
-  /** Scans the blobs this push would add; any doubt holds the push back. */
-  async function scanForPush(ctx: RepoContext, tip: string, remoteName: string, signal?: AbortSignal): Promise<{ notScanned: NotScannedBlob[] } | { block: BackupBlock }> {
-    const record = await loadRecord(ctx.folder);
-    const known: string[] = [];
-    const verified = record.lastVerifiedSnapshot;
-    if (verified) {
-      const present = await ctx.git.run(["cat-file", "-e", `${verified}^{commit}`], local(ctx, signal));
-      if (present.code === 0) known.push(verified);
-    }
+  /**
+   * Scans every blob reachable from the snapshot about to be pushed, in the push's own transport context:
+   * the whole chain, each time, because nothing proves the destination still holds any of it when the
+   * push runs. Any doubt holds the push back.
+   */
+  async function scanForPush(t: TransportContext, tip: string, signal?: AbortSignal): Promise<{ notScanned: NotScannedBlob[] } | { block: BackupBlock }> {
     let collected;
     try {
-      collected = await collectPushBlobs({ git: ctx.git, run: local(ctx, signal), newTip: tip, remoteKnown: known, remoteTrackingGlob: `refs/remotes/${remoteName}/*`, maxBlobBytes: maxScanBlobBytes, maxTotalBytes: maxScanTotalBytes });
+      collected = await collectPushBlobs({ git: runner(devNull), run: t.options(localLimits(signal)), newTip: tip, maxBlobBytes: maxScanBlobBytes, maxTotalBytes: maxScanTotalBytes });
     } catch {
       signal?.throwIfAborted();
       return { block: block("scanner-unavailable", "could not list the files this backup would send, so they were not scanned") };
@@ -413,171 +431,37 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
   async function exclusive<T>(ctx: RepoContext, fn: () => Promise<T>): Promise<T> {
     const key = ctx.folder.dir;
     const previous = queues.get(key) ?? Promise.resolve();
-    const run = previous.catch(() => undefined).then(() => withFolderLock(ctx.folder, { waitMs: lockWaitMs, staleMs: 10 * 60_000 }, fn));
+    const run = previous.catch(() => undefined).then(() => withFolderLock(ctx.folder.lockDir, { waitMs: lockWaitMs }, fn));
     queues.set(key, run.catch(() => undefined));
     return run;
   }
 
-  async function latest(ctx: RepoContext, signal?: AbortSignal): Promise<{ ref: string; oid: string } | null> {
-    const out = await ctx.git.ok(["for-each-ref", "--format=%(objectname) %(refname)", ctx.prefix], local(ctx, signal));
-    return latestDayRef(out.toString("utf8").split("\n").filter(Boolean), ctx.prefix);
+  /**
+   * Read-change-write of the deadline record under its own short lock. Edit and save reports take only
+   * this lock, so they never wait behind a capture, push or verify holding the operation lock.
+   */
+  function persist(ctx: RepoContext, change: (record: DeadlineRecord) => DeadlineRecord): Promise<DeadlineRecord> {
+    return withFolderLock(ctx.folder.recordLockDir, { waitMs: lockWaitMs }, async () => {
+      const next = change(await loadRecord(ctx.folder));
+      await saveRecord(ctx.folder, next);
+      return next;
+    });
   }
 
-  async function treeEntries(ctx: RepoContext, commit: string, signal?: AbortSignal): Promise<Map<string, TreeEntry>> {
-    const entries = new Map<string, TreeEntry>();
-    const out = await ctx.git.ok(["ls-tree", "-r", "-z", "--full-tree", commit], local(ctx, signal));
-    for (const record of splitNul(out)) {
-      const tab = record.indexOf("\t");
-      const [mode, type, oid] = record.slice(0, tab).split(" ");
-      if (type !== "blob" || !mode || !oid) continue;
-      entries.set(record.slice(tab + 1), { mode, oid });
-    }
-    return entries;
-  }
-
-  function blobOid(ctx: RepoContext, content: Buffer): string {
-    return createHash(ctx.objectFormat).update(`blob ${content.length}\0`).update(content).digest("hex");
-  }
-
-  async function persist(ctx: RepoContext, change: (record: DeadlineRecord) => DeadlineRecord): Promise<DeadlineRecord> {
-    const next = change(await loadRecord(ctx.folder));
-    await saveRecord(ctx.folder, next);
-    return next;
+  /** The current record (a damaged one is set aside and replaced under the record lock). */
+  function readRecord(ctx: RepoContext): Promise<DeadlineRecord> {
+    return withFolderLock(ctx.folder.recordLockDir, { waitMs: lockWaitMs }, () => loadRecord(ctx.folder));
   }
 
   async function recordError(ctx: RepoContext, kind: BackupErrorRecord["kind"], message: string): Promise<void> {
     await persist(ctx, (record) => withError(record, { kind, at: now(), message: message.slice(0, 2000) }));
   }
 
-  async function captureLocked(ctx: RepoContext, scope: BackupScope, signal?: AbortSignal): Promise<CaptureResult> {
-    const compiled = compileScope(scope);
-    const startedAt = now();
-    const previous = await latest(ctx, signal);
-    const todayRef = backupRef(machineId, ctx.checkoutId, startedAt);
-    // If the clock moved back behind the newest day branch, keep appending to that branch.
-    const ref = previous && previous.ref > todayRef ? previous.ref : todayRef;
-    const prevEntries = previous ? await treeEntries(ctx, previous.oid, signal) : new Map<string, TreeEntry>();
-
-    const { files, skipped } = await listScope(ctx.root, compiled);
-    const listed = new Set(files);
-    const result: CaptureResult = { committed: false, snapshot: previous?.oid ?? null, ref: previous?.ref ?? null, startedAt, added: [], modified: [], removed: [], pending: [], skipped: [...skipped] };
-    const updates: string[] = [];
-    const writes: { oid: string; content: Buffer }[] = [];
-    const readPaths: string[] = [];
-    const cleared: string[] = [];
-    const pendingSet = new Set<string>();
-
-    for (const path of files) {
-      signal?.throwIfAborted();
-      const abs = join(ctx.root, ...path.split("/"));
-      const before = prevEntries.get(path);
-      const cached = ctx.cache.get(path);
-      let entry: { oid: string; mode: GitFileMode } | null = null;
-      // Checked before the cache too: a cached stat key must not vouch for a path now reached through a link.
-      const contained = await checkContainment(ctx.root, abs);
-      if (contained !== "ok") {
-        ctx.cache.delete(path);
-        listed.delete(path);
-        cleared.push(path);
-        if (contained === "beyond-symlink") result.skipped.push({ path, reason: "beyond-symlink" });
-        continue;
-      }
-      // The cache only short-cuts files already in the previous snapshot, so their blob is known to exist.
-      if (cached && before && before.oid === cached.oid) {
-        try {
-          const s = await lstat(abs, { bigint: true });
-          if (statKey(s) === cached.key) entry = { oid: cached.oid, mode: cached.mode };
-        } catch { /* fall through to a full read */ }
-        if (!entry) ctx.cache.delete(path);
-      }
-      if (!entry) {
-        const read = await readStable(abs, { settleMs, retries, maxFileBytes, root: ctx.root });
-        if (!read.ok) {
-          if (read.reason === "missing" || read.reason === "beyond-symlink") {
-            listed.delete(path);
-            cleared.push(path);
-            if (read.reason === "beyond-symlink") result.skipped.push({ path, reason: "beyond-symlink" });
-            continue;
-          }
-          result.pending.push({ path, reason: read.reason });
-          pendingSet.add(path);
-          continue;
-        }
-        const oid = blobOid(ctx, read.content);
-        entry = { oid, mode: read.mode };
-        if (Date.now() - read.changedAtMs >= Math.max(settleMs, CACHE_MIN_AGE_MS)) ctx.cache.set(path, { key: read.key, oid, mode: read.mode });
-        if (!before || before.oid !== oid) writes.push({ oid, content: read.content });
-      }
-      readPaths.push(path);
-      if (!before) result.added.push(path);
-      else if (before.oid !== entry.oid || before.mode !== entry.mode) result.modified.push(path);
-      else continue;
-      updates.push(`${entry.mode} ${entry.oid}\t${path}\0`);
-    }
-    for (const path of prevEntries.keys()) {
-      if (listed.has(path)) continue;
-      result.removed.push(path);
-      updates.push(`0 ${ctx.zeroOid}\t${path}\0`);
-    }
-    const record = await loadRecord(ctx.folder);
-    for (const path of Object.keys(record.pendingSince)) if (!listed.has(path)) cleared.push(path);
-
-    const sawChange = updates.length > 0 || result.pending.length > 0;
-    if (updates.length > 0) {
-      for (const write of writes) {
-        const written = (await ctx.git.ok(["hash-object", "-w", "--no-filters", "--stdin"], { ...local(ctx, signal), input: write.content })).toString("utf8").trim();
-        if (written !== write.oid) throw new Error("object store returned an unexpected blob id");
-      }
-      const indexEnv = { GIT_INDEX_FILE: ctx.folder.indexFile };
-      await rm(`${ctx.folder.indexFile}.lock`, { force: true }); // stale only: the folder lock is held
-      await ctx.git.ok(previous ? ["read-tree", previous.oid] : ["read-tree", "--empty"], local(ctx, signal, indexEnv));
-      await ctx.git.ok(["update-index", "-z", "--index-info"], { ...local(ctx, signal, indexEnv), input: Buffer.from(updates.join(""), "utf8") });
-      const tree = (await ctx.git.ok(["write-tree"], local(ctx, signal, indexEnv))).toString("utf8").trim();
-      const prevTree = previous ? (await ctx.git.ok(["rev-parse", "--verify", `${previous.oid}^{tree}`], local(ctx, signal))).toString("utf8").trim() : null;
-      if (tree !== prevTree) {
-        const parents: string[] = [];
-        if (previous) parents.push("-p", previous.oid);
-        const head = await ctx.git.run(["rev-parse", "-q", "--verify", "HEAD^{commit}"], local(ctx, signal));
-        const headOid = head.code === 0 ? head.stdout.toString("utf8").trim() : null;
-        if (headOid && headOid !== previous?.oid) {
-          let ancestor = false;
-          if (previous) {
-            const check = await ctx.git.run(["merge-base", "--is-ancestor", headOid, previous.oid], local(ctx, signal));
-            if (check.code !== 0 && check.code !== 1) throw new GitProcessError("exit", "could not compare HEAD with the previous snapshot", check.code, check.stderr);
-            ancestor = check.code === 0;
-          }
-          if (!ancestor) parents.push("-p", headOid);
-        }
-        const seconds = Math.floor(startedAt / 1000);
-        const identity = {
-          GIT_AUTHOR_NAME: author.name,
-          GIT_AUTHOR_EMAIL: author.email,
-          GIT_AUTHOR_DATE: `@${seconds} +0000`,
-          GIT_COMMITTER_NAME: author.name,
-          GIT_COMMITTER_EMAIL: author.email,
-          GIT_COMMITTER_DATE: `@${seconds} +0000`,
-        };
-        const message = `Automatic backup ${new Date(startedAt).toISOString()}\n\nmachine: ${machineId}\ncheckout: ${ctx.checkoutId}\nchanged: ${result.added.length} added, ${result.modified.length} modified, ${result.removed.length} removed\n`;
-        const commit = (await ctx.git.ok(["commit-tree", "--no-gpg-sign", tree, ...parents, "-m", message], local(ctx, signal, identity))).toString("utf8").trim();
-        const expectedOld = previous && previous.ref === ref ? previous.oid : ctx.zeroOid;
-        await ctx.git.ok(["update-ref", "-m", "automatic backup snapshot", ref, commit, expectedOld], local(ctx, signal));
-        result.committed = true;
-        result.snapshot = commit;
-        result.ref = ref;
-      }
-    }
-    if (result.snapshot && result.ref) {
-      const snapshot = result.snapshot;
-      const snapshotRef = result.ref;
-      await persist(ctx, (r) => applyCapture(r, { snapshot, ref: snapshotRef, startedAt, sawChange, readPaths, pendingPaths: [...pendingSet], clearedPaths: cleared }));
-    } else if (sawChange) {
-      await persist(ctx, (r) => noteEditInRecord(r, startedAt));
-    }
-    return result;
-  }
+  const captureDeps: CaptureDeps = { machineId, now, settleMs, retries, maxFileBytes, author, run: local, readRecord, persist };
+  const latest = (ctx: RepoContext, signal?: AbortSignal) => latestSnapshot(ctx, local(ctx, signal));
 
   async function hooksNotRun(ctx: RepoContext): Promise<string[]> {
-    const probe = createGitRunner({ gitPath: options.gitPath, hooksDir: ctx.folder.hooksDir, env: options.gitEnv });
+    const probe = runner(ctx.folder.hooksDir);
     // Ask with the repository's own configuration: run `config` rather than `rev-parse --git-path`,
     // because the engine's override would otherwise report its own empty folder.
     const configured = await probe.run(["config", "--get-all", "--includes", "--show-origin", "core.hooksPath"], local(ctx));
@@ -602,7 +486,6 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
   }
 
   const restoreApi = createRestoreApi({
-    remote,
     now,
     authorEmail: author.email,
     maxFileBytes,
@@ -616,7 +499,22 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
       return real;
     },
     locationBlock,
-    runner: () => createGitRunner({ gitPath: options.gitPath, hooksDir: devNull, env: options.gitEnv }),
+    runner: () => runner(devNull),
+    // The remote asked for; else the one this checkout was enabled with; else the engine's default. A
+    // fresh checkout with no enablement record passes `remote` to read another remote's backups.
+    destination: async (real, requested, signal) => {
+      let name = requested;
+      if (name === undefined) {
+        const { gitDir } = await locate(real);
+        const record = await readEnablement(engineFolder(gitDir).enablementFile);
+        name = record && record.realPath === real ? record.remote : remote;
+      }
+      if (!REMOTE_NAME.test(name)) throw new Error("remote must be the name of a configured remote");
+      const found = await destinationOf(runner(devNull), real, name, signal);
+      if ("block" in found) throw new BackupRefusedError(found.block);
+      const { common, format } = await locate(real);
+      return { ...found.destination, store: objectStore(isAbsolute(common) ? common : resolve(real, common), format) };
+    },
   });
 
   return {
@@ -630,17 +528,20 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
       const confirmed = opts.visibilityConfirmedPublic === true;
       const ctx = await context(real);
       return exclusive(ctx, async (): Promise<EnableResult> => {
-        const urls = await remoteUrls(ctx, name);
-        if (!urls) throw new Error(`remote ${name} is not configured in this repository`);
-        const pushUrlDigest = urlDigest(urls.push);
-        const seen = await checkVisibility(ctx, pushUrlDigest, urls.push, true);
+        const found = await destinationOf(ctx.git, ctx.root, name);
+        if ("block" in found) {
+          if (found.block.reason === "unsupported-remote") throw new BackupRefusedError(found.block);
+          throw new Error(`remote ${name} is not configured in this repository`);
+        }
+        const digest = urlDigest(found.destination.url);
+        const seen = await checkVisibility(ctx, digest, found.destination.url, true);
         if (seen === "public" && !confirmed) throw new BackupRefusedError(visibilityBlock(seen, false)!);
         await writeEnablement(ctx.folder.enablementFile, {
           schema: 1,
           realPath: ctx.root,
           remote: name,
-          fetchUrlDigest: urlDigest(urls.fetch),
-          pushUrlDigest,
+          fetchUrlDigest: digest,
+          pushUrlDigest: digest,
           visibilityConfirmedPublic: confirmed,
           enabledAt: now(),
         });
@@ -665,9 +566,10 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
         const state = await enablementState(ctx, opts.signal);
         if ("block" in state) throw new BackupRefusedError(state.block);
         try {
-          return await captureLocked(ctx, scope, opts.signal);
+          return await captureSnapshot(ctx, scope, captureDeps, opts.signal);
         } catch (error) {
-          await recordError(ctx, "capture-failed", (error as Error).message).catch(() => undefined);
+          if (error instanceof BackupRefusedError) await persist(ctx, (r) => withBlock(r, error.block)).catch(() => undefined);
+          else await recordError(ctx, "capture-failed", (error as Error).message).catch(() => undefined);
           throw error;
         }
       });
@@ -680,23 +582,33 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
       return exclusive(ctx, async (): Promise<PushResult> => {
         const state = await enablementState(ctx, opts.signal);
         if ("block" in state) return blockedPush(state.block);
-        const { record: enabled, pushUrl } = state.enabled;
-        const seen = await checkVisibility(ctx, enabled.pushUrlDigest, pushUrl, false);
+        const { record: enabled, destination } = state.enabled;
+        const seen = await checkVisibility(ctx, enabled.pushUrlDigest, destination.url, false);
         const hidden = visibilityBlock(seen, enabled.visibilityConfirmedPublic);
         if (hidden) return holdPush(ctx, hidden);
         const current = await latest(ctx, opts.signal);
         if (!current) return { state: "no-snapshot", message: "no backup snapshot has been captured yet" };
-        const scanned = await scanForPush(ctx, current.oid, enabled.remote, opts.signal);
-        if ("block" in scanned) return holdPush(ctx, scanned.block);
-        const target = enabled.remote;
-        let result;
+        const who = { email: author.email, machineId, checkoutId: ctx.checkoutId };
+        // History check, scan and push share one transport context, so all three see the same objects and
+        // the push goes to the address validated above, whatever the repository's configuration says now.
+        let outcome: { block: BackupBlock } | { failed: string } | { result: Awaited<ReturnType<typeof pushIn>>; notScanned: NotScannedBlob[] };
         try {
-          result = await ctx.git.run(["push", "--porcelain", "--no-follow-tags", "--no-signed", "--recurse-submodules=no", target, `${current.ref}:${current.ref}`], network(ctx, opts.signal));
+          outcome = await withTransport(storeOf(ctx), async (t) => {
+            const problem = await chainProblem(runner(devNull), t.options(localLimits(opts.signal)), ctx.folder, current.oid, who);
+            if (problem) return { block: block("unsupported-history", `${problem}; automatic backup does not extend or publish it`) };
+            const scanned = await scanForPush(t, current.oid, opts.signal);
+            if ("block" in scanned) return scanned;
+            return { result: await pushIn(ctx.git, t, destination.url, current.oid, current.ref, networkLimits(opts.signal)), notScanned: scanned.notScanned };
+          });
         } catch (error) {
-          const message = (error as Error).message;
-          await recordError(ctx, "push-failed", message);
-          return { state: "failed", ref: current.ref, snapshot: current.oid, message };
+          outcome = { failed: (error as Error).message };
         }
+        if ("block" in outcome) return holdPush(ctx, outcome.block);
+        if ("failed" in outcome) {
+          await recordError(ctx, "push-failed", outcome.failed);
+          return { state: "failed", ref: current.ref, snapshot: current.oid, message: outcome.failed };
+        }
+        const { result, notScanned } = outcome;
         const line = result.stdout.toString("utf8").split("\n").find((l) => l.includes(`\t${current.ref}:${current.ref}\t`));
         const flag = line?.[0];
         if (flag === "!") {
@@ -710,7 +622,7 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
           return { state: "failed", ref: current.ref, snapshot: current.oid, message };
         }
         await persist(ctx, (r) => applyPushed(r, current.oid, current.ref));
-        return { state: flag === "=" ? "up-to-date" : "pushed", ref: current.ref, snapshot: current.oid, notScanned: scanned.notScanned };
+        return { state: flag === "=" ? "up-to-date" : "pushed", ref: current.ref, snapshot: current.oid, notScanned };
       });
     },
 
@@ -721,13 +633,13 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
       return exclusive(ctx, async (): Promise<VerifyResult> => {
         const state = await enablementState(ctx, opts.signal);
         if ("block" in state) return { verified: false, state: "blocked", reason: state.block.reason, message: state.block.message };
-        const target = state.enabled.record.remote;
-        const record = await loadRecord(ctx.folder);
+        const { destination } = state.enabled;
+        const record = await readRecord(ctx);
         const pushed = record.lastPushed;
         if (!pushed) return { verified: false, state: "not-pushed" };
         let out;
         try {
-          out = await ctx.git.ok(["ls-remote", "--refs", target, pushed.ref], network(ctx, opts.signal));
+          out = await lsRemoteAt(ctx.git, storeOf(ctx), destination.url, [pushed.ref], networkLimits(opts.signal));
         } catch (error) {
           const message = (error as Error).message;
           await recordError(ctx, "verify-failed", message);
@@ -747,11 +659,36 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
       });
     },
 
-    async noteEdit(repo, time) {
+    async noteEdit(repo, time, opts = {}) {
       const ms = time instanceof Date ? time.getTime() : time;
       if (!Number.isFinite(ms)) throw new Error("edit time must be a Date or finite milliseconds");
+      const path = opts.path === undefined ? null : checkedPath(opts.path);
       const ctx = await context(await realRoot(repo));
-      await exclusive(ctx, () => persist(ctx, (r) => noteEditInRecord(r, ms)));
+      let ticket = 0;
+      await persist(ctx, (r) => {
+        const next = noteEditInRecord(r, ms, path);
+        ticket = next.ticket;
+        return next.record;
+      });
+      return ticket;
+    },
+
+    async noteFlush(repo, ack) {
+      if (!ack || typeof ack !== "object" || "through" in ack) throw new Error("a save acknowledgement is { upTo: <ticket from noteEdit>, paths } or { upTo, allDocuments: true }");
+      if (ack.completedWrites !== undefined && !Array.isArray(ack.completedWrites)) throw new Error("completedWrites must be an array of path/token receipts");
+      const completedWrites = ack.completedWrites?.map((receipt) => ({ path: checkedPath(receipt?.path), token: receipt?.token }));
+      const checked: FlushAcknowledgement = ack.allDocuments === true
+        ? { upTo: ack.upTo, allDocuments: true, completedWrites }
+        : { upTo: ack.upTo, paths: (Array.isArray(ack.paths) ? ack.paths : []).map(checkedPath), completedWrites };
+      const ctx = await context(await realRoot(repo));
+      await persist(ctx, (r) => noteFlushInRecord(r, checked, now()));
+    },
+
+    async noteWriteStart(repo, paths) {
+      const checked = paths.map(checkedPath);
+      const ctx = await context(await realRoot(repo));
+      const record = await persist(ctx, (r) => noteWriteStartInRecord(r, checked, now()));
+      return record.generation;
     },
 
     async status(repo, opts = {}) {
@@ -759,7 +696,7 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
       const where = await locationBlock(real);
       const ctx = await context(real);
       return exclusive(ctx, async (): Promise<BackupStatus> => {
-        const record = await loadRecord(ctx.folder);
+        const record = await readRecord(ctx);
         const current = await latest(ctx, opts.signal);
         const state = await enablementState(ctx, opts.signal);
         // Live guards first, then the cached visibility answer (no network here), then the last held-back push.
@@ -781,6 +718,9 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
           latestRef: current?.ref ?? null,
           lastPushed: record.lastPushed,
           pending: Object.keys(record.pendingSince).sort(),
+          unlistedFolders: Object.keys(record.unlistedSince).sort(),
+          unflushedEditSince: record.unflushed.reduce<number | null>((oldest, u) => (oldest === null ? u.from : Math.min(oldest, u.from)), null),
+          writing: Object.entries(record.writes).filter(([, w]) => w.active).map(([path]) => path).sort(),
           lastError: record.lastError,
           recoveredFromDamagedRecord: record.recoveredFromDamagedRecord === true,
           repositoryHooksNotRun: await hooksNotRun(ctx),

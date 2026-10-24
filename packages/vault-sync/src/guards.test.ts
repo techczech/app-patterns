@@ -323,7 +323,7 @@ describe("secret scan before push", () => {
     expect((await e.status(h.repo)).block).toBeNull();
   });
 
-  test("only blobs not reachable from the last verified snapshot are scanned, including user commits reached through HEAD", async () => {
+  test("every blob of the chain is scanned before each push, whatever the destination holds; user commits are not part of a push", async () => {
     const h = setup();
     put(h.repo, "notes/a.md", "first\n");
     const e = engine(h);
@@ -339,22 +339,24 @@ describe("secret scan before push", () => {
     h.scans.length = 0;
     await e.capture(h.repo, scope);
     expect((await e.pushBackup(h.repo)).state).toBe("pushed");
-    expect(h.scans[0]!.map((b) => b.path).sort()).toEqual(["notes/b.md", "outside/committed.txt"]);
+    // The destination already holds a.md, but it may drop it before the push; it is scanned again.
+    expect(h.scans[0]!.map((b) => b.path).sort()).toEqual(["notes/a.md", "notes/b.md"]);
   });
 
-  test("user commits the remote already holds (remote-tracking refs) are not scanned again", async () => {
+  test("a destination branch with unrelated history never narrows the scan below what the push sends", async () => {
     const h = setup();
-    put(h.repo, "outside/old.txt", "already published on main\n");
-    git(h.repo, ["add", "outside/old.txt"]);
+    put(h.repo, "notes/old.md", "already published on main\n");
+    git(h.repo, ["add", "notes/old.md"]);
     git(h.repo, ["commit", "-q", "-m", "published"]);
     git(h.repo, ["push", "-q", "origin", "main"]);
-    git(h.repo, ["fetch", "-q", "origin"]);
     put(h.repo, "notes/a.md", "draft\n");
     const e = engine(h);
     await e.enable(h.repo);
     await e.capture(h.repo, scope);
     expect((await e.pushBackup(h.repo)).state).toBe("pushed");
-    expect(h.scans[0]!.map((b) => b.path).sort()).toEqual(["notes/a.md"]);
+    // Git does not look inside unrelated advertised history when choosing what to send, and neither does
+    // the scan: the blob main already holds is scanned again, which errs on the safe side.
+    expect(h.scans[0]!.map((b) => b.path).sort()).toEqual(["notes/a.md", "notes/old.md"]);
   });
 
   test("new blobs above the total scan limit hold the push back", async () => {
@@ -405,7 +407,7 @@ describe("secret scan before push", () => {
 
   test("the enablement record holds no remote URL", async () => {
     const h = setup();
-    git(h.repo, ["remote", "set-url", "origin", `file://user:token-value@localhost${h.remote}`]);
+    git(h.repo, ["remote", "set-url", "origin", "https://user:token-value@example.invalid/owner/vault.git"]);
     const e = engine(h);
     await e.enable(h.repo);
     const text = readFileSync(join(h.repo, ".git/vault-sync/enablement.json"), "utf8");

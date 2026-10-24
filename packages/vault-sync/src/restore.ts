@@ -10,6 +10,12 @@
  * - A target that exists is not replaced unless `overwrite` is set; by default the restored bytes go to a
  *   sibling named "<name> (restored YYYY-MM-DD HHMM).<ext>".
  * - The cloud-folder and network-mount rules apply. Restore does not need the checkout to be enabled.
+ * - Backups are read from one validated destination: the `remote` option, else the remote this checkout
+ *   was enabled with, else the engine's default remote (see destination.ts for supported set-ups). The
+ *   fetch goes to that validated address in the engine's transport context (transport.ts); the fetched
+ *   branches are then mirrored into the private namespace with local ref updates.
+ * - What a backup covers comes from the coverage lines the engine wrote into the snapshot
+ *   (snapshot-message.ts), never from its commit time; without them coverage is reported as unknown.
  */
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
@@ -17,7 +23,10 @@ import { link, lstat, mkdir, open as openHandle, readFile, realpath, rename, rm,
 import { basename, dirname, extname, join, sep } from "node:path";
 import { validateId } from "./backup-ref.ts";
 import { BackupRefusedError, type BackupBlock } from "./blocks.ts";
+import type { Destination } from "./destination.ts";
 import { splitNul, type GitRunner } from "./git-process.ts";
+import { parseCoverage } from "./snapshot-message.ts";
+import { fetchBackupBranches, type ObjectStore } from "./transport.ts";
 
 export interface BackupEntry {
   /** Branch name without the refs/heads/ prefix: backup/<machine>/<checkout>/<yyyy-mm-dd>. */
@@ -28,8 +37,22 @@ export interface BackupEntry {
   date: string;
   /** Object id of the newest snapshot on the branch. */
   tip: string;
-  /** Commit time of the tip in milliseconds: everything up to here is on the remote. */
-  protectedThrough: number;
+  /** Commit time of the tip in milliseconds. This is when it was captured, not what it covers. */
+  snapshotTime: number;
+  /** "recorded": the tip carries the engine's coverage lines. "unknown": it does not. */
+  coverage: "recorded" | "unknown";
+  /**
+   * Every edit made before this time was on disk and is in the tip, as recorded at capture, except in the
+   * pending files and unlisted folders; null when unknown.
+   */
+  protectedThrough: number | null;
+  /**
+   * Files the tip holds at an earlier version plus folders in scope the capture could not list (whose
+   * contents may be missing); 0 only when the capture was complete. Null when unknown.
+   */
+  pendingFiles: number | null;
+  /** Of `pendingFiles`, the folders that could not be listed; null when unknown. */
+  unlistedFolders: number | null;
 }
 
 export interface SnapshotInfo {
@@ -82,10 +105,15 @@ export interface RestoreApi {
 
 export interface RestoreOperation {
   signal?: AbortSignal;
+  /** Remote to read backups from. Default: the remote this checkout was enabled with, else the engine's remote. */
+  remote?: string;
+}
+
+export interface RestoreDestination extends Destination {
+  store: ObjectStore;
 }
 
 export interface RestoreDeps {
-  remote: string;
   now: () => number;
   authorEmail: string;
   maxFileBytes: number;
@@ -95,6 +123,8 @@ export interface RestoreDeps {
   realRoot(repo: string): Promise<string>;
   locationBlock(real: string): Promise<BackupBlock | null>;
   runner(): GitRunner;
+  /** The validated remote to read backups from, with the checkout's object store; throws BackupRefusedError for an unsupported set-up. */
+  destination(real: string, requested: string | undefined, signal?: AbortSignal): Promise<RestoreDestination>;
 }
 
 /** Test seam: runs after the target was checked and before the file is published. */
@@ -183,15 +213,62 @@ export function createRestoreApi(deps: RestoreDeps): RestoreApi {
     return { real, git: deps.runner() };
   }
 
-  function privateRef(branch: string): string {
+  function privateRef(remote: string, branch: string): string {
     const name = branch.startsWith("refs/heads/") ? branch.slice("refs/heads/".length) : branch;
     if (!parseBackupBranch(name)) throw new RestoreRefusedError("bad-snapshot", "not a backup branch name");
-    return `${privateRoot(deps.remote)}${name}`;
+    return `${privateRoot(remote)}${name}`;
   }
 
-  async function fetchBackups(real: string, git: GitRunner, signal?: AbortSignal): Promise<void> {
-    const dst = `${privateRoot(deps.remote)}backup/*`;
-    await git.ok(["fetch", "--quiet", "--prune", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", "--no-auto-gc", "--refmap=", deps.remote, `+refs/heads/backup/*:${dst}`], run(real, deps.networkTimeoutMs, signal));
+  /** Mirrors the destination's backup branches into the private namespace (a fetch with prune, in two steps). */
+  async function fetchBackups(real: string, git: GitRunner, destination: RestoreDestination, signal?: AbortSignal): Promise<void> {
+    const root = privateRoot(destination.name);
+    const local = run(real, deps.localTimeoutMs, signal);
+    const held = new Map<string, string>();
+    for (const line of (await git.ok(["for-each-ref", "--format=%(objectname) %(refname)", `${root}backup/`], local)).toString("utf8").split("\n")) {
+      const space = line.indexOf(" ");
+      if (space > 0) held.set(line.slice(space + 1), line.slice(0, space));
+    }
+    const have = new Map([...held].map(([ref, oid]) => [`refs/heads/${ref.slice(root.length)}`, oid] as const));
+    const fetched = await fetchBackupBranches(git, destination.store, destination.url, have, { timeoutMs: deps.networkTimeoutMs, maxOutputBytes: deps.maxOutputBytes, signal });
+    const updates: string[] = [];
+    const wanted = new Set<string>();
+    for (const [ref, oid] of fetched) {
+      const branch = ref.slice("refs/heads/".length);
+      if (!ref.startsWith("refs/heads/") || !parseBackupBranch(branch) || !OID.test(oid)) continue;
+      const mine = `${root}${branch}`;
+      wanted.add(mine);
+      if (held.get(mine) !== oid) updates.push(`update ${mine} ${oid}\n`);
+    }
+    for (const ref of held.keys()) if (!wanted.has(ref)) updates.push(`delete ${ref}\n`);
+    if (updates.length > 0) await git.ok(["update-ref", "--stdin"], { ...local, input: Buffer.from(updates.join(""), "utf8") });
+  }
+
+  /** Commit messages of the given commits, read in one batch; a missing or non-commit object maps to null. */
+  async function messages(real: string, git: GitRunner, oids: string[], signal?: AbortSignal): Promise<Map<string, string | null>> {
+    const found = new Map<string, string | null>();
+    if (oids.length === 0) return found;
+    const out = await git.ok(["cat-file", "--batch"], { ...run(real, deps.localTimeoutMs, signal), input: Buffer.from(`${oids.join("\n")}\n`, "utf8") });
+    let at = 0;
+    for (const oid of oids) {
+      const eol = out.indexOf(0x0a, at);
+      if (eol < 0) break;
+      const [id, type, sizeText] = out.subarray(at, eol).toString("utf8").split(" ");
+      if (type === "missing" || !sizeText) {
+        found.set(oid, null);
+        at = eol + 1;
+        continue;
+      }
+      const size = Number(sizeText);
+      const body = out.subarray(eol + 1, eol + 1 + size).toString("utf8");
+      at = eol + 1 + size + 1;
+      if (id !== oid || type !== "commit") {
+        found.set(oid, null);
+        continue;
+      }
+      const split = body.indexOf("\n\n");
+      found.set(oid, split < 0 ? "" : body.slice(split + 2));
+    }
+    return found;
   }
 
   async function checkedSnapshot(real: string, git: GitRunner, snapshot: string, signal?: AbortSignal): Promise<string> {
@@ -337,8 +414,9 @@ export function createRestoreApi(deps: RestoreDeps): RestoreApi {
   return {
     async listBackups(repo, options = {}) {
       const { real, git } = await openRepo(repo);
-      await fetchBackups(real, git, options.signal);
-      const root = privateRoot(deps.remote);
+      const destination = await deps.destination(real, options.remote, options.signal);
+      await fetchBackups(real, git, destination, options.signal);
+      const root = privateRoot(destination.name);
       const out = await git.ok(["for-each-ref", "--format=%(refname)%00%(objectname)%00%(committerdate:unix)%00", root], run(real, deps.localTimeoutMs, options.signal));
       const fields = out.toString("utf8").split("\0").map((f) => f.replace(/^\n/, ""));
       const entries: BackupEntry[] = [];
@@ -349,14 +427,19 @@ export function createRestoreApi(deps: RestoreDeps): RestoreApi {
         const parsed = parseBackupBranch(branch);
         const time = Number(fields[i + 2]);
         if (!parsed || !OID.test(fields[i + 1]!) || !Number.isFinite(time)) continue;
-        entries.push({ branch, ...parsed, tip: fields[i + 1]!, protectedThrough: time * 1000 });
+        entries.push({ branch, ...parsed, tip: fields[i + 1]!, snapshotTime: time * 1000, coverage: "unknown", protectedThrough: null, pendingFiles: null, unlistedFolders: null });
+      }
+      const bodies = await messages(real, git, [...new Set(entries.map((e) => e.tip))], options.signal);
+      for (const entry of entries) {
+        const recorded = parseCoverage(bodies.get(entry.tip) ?? "");
+        if (recorded) Object.assign(entry, { coverage: "recorded", protectedThrough: recorded.coverageThrough, pendingFiles: recorded.pendingFiles + recorded.unlistedFolders, unlistedFolders: recorded.unlistedFolders });
       }
       return entries.sort((a, b) => (a.branch < b.branch ? -1 : a.branch > b.branch ? 1 : 0));
     },
 
     async listSnapshots(repo, branch, path, options = {}) {
       const { real, git } = await openRepo(repo);
-      const ref = privateRef(branch);
+      const ref = privateRef((await deps.destination(real, options.remote, options.signal)).name, branch);
       const filter = path === undefined ? null : `:(literal)${cleanRelative(path).join("/")}`;
       const limit = Math.max(1, Math.floor(options.limit ?? 500));
       // Engine commits are recognised by the engine identity on author OR committer: either one alone
@@ -367,8 +450,9 @@ export function createRestoreApi(deps: RestoreDeps): RestoreApi {
         return id && OID.test(id) ? { id, time: Number(time) * 1000, engine: isEngine(author, committer) } : null;
       };
       const format = "--format=%H%x1f%ct%x1f%ae%x1f%ce";
-      // A chain's first snapshot has the user's HEAD as first parent, so walk newest first in bounded
-      // batches and stop at the first commit that is not the engine's.
+      // Snapshots made by earlier engine versions could have a user commit as a parent, and a branch on
+      // the remote may hold anything, so walk newest first in bounded batches and stop at the first
+      // commit that is not the engine's.
       const chain: SnapshotInfo[] = [];
       let boundary: string | null = null;
       let lastScanned: string | null = null;

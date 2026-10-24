@@ -45,7 +45,25 @@ describe("git process adapter", () => {
   test.if(posix)("arguments reach git as an array, never through a shell, with hook and maintenance overrides first", async () => {
     const runner = createGitRunner({ gitPath: fakeGit("echoargs", 'for a in "$@"; do printf "%s\\0" "$a"; done'), hooksDir: "/engine/hooks" });
     const out = await runner.ok(["show", "$(touch x); `id`", "a b\tc\nd"], base);
-    expect(splitNul(out)).toEqual(["-c", "core.hooksPath=/engine/hooks", "-c", "core.fsmonitor=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false", "show", "$(touch x); `id`", "a b\tc\nd"]);
+    expect(splitNul(out)).toEqual([
+      "-c", "core.hooksPath=/engine/hooks", "-c", "core.fsmonitor=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false", "-c", "log.showSignature=false",
+      "-c", "protocol.allow=never", "-c", "protocol.file.allow=always", "-c", "protocol.https.allow=always",
+      "-c", "core.askPass=", "-c", "credential.helper=",
+      "show", "$(touch x); `id`", "a b\tc\nd",
+    ]);
+  });
+
+  test.if(posix)("the transport allow-list, replacement refs and grafts are set last, so no caller or configuration widens them (review round 2, S1)", async () => {
+    const runner = createGitRunner({ gitPath: fakeGit("echoenv", 'printf "%s\\n%s\\n%s" "$GIT_ALLOW_PROTOCOL" "$GIT_NO_REPLACE_OBJECTS" "$GIT_GRAFT_FILE"'), hooksDir: "/engine/hooks", env: { GIT_ALLOW_PROTOCOL: "ext:ssh" } });
+    const out = (await runner.ok(["status"], { ...base, env: { GIT_ALLOW_PROTOCOL: "ext", GIT_NO_REPLACE_OBJECTS: "" } })).toString("utf8").split("\n");
+    expect(out).toEqual(["file:https", "1", "/dev/null"]);
+  });
+
+  test.if(posix)("only the caller's trusted credential helpers follow the reset of configured ones", async () => {
+    const runner = createGitRunner({ gitPath: fakeGit("echoargs2", 'for a in "$@"; do printf "%s\\0" "$a"; done'), hooksDir: "/engine/hooks", credentialHelpers: ["osxkeychain"] });
+    const args = splitNul(await runner.ok(["status"], base));
+    expect(args.slice(args.indexOf("credential.helper=") - 1, -1)).toEqual(["-c", "credential.helper=", "-c", "credential.helper=osxkeychain"]);
+    expect(() => createGitRunner({ hooksDir: dir, credentialHelpers: ["a\nb"] })).toThrow();
   });
 
   test("environment drops repository-redirecting GIT_* variables and turns prompts off", () => {

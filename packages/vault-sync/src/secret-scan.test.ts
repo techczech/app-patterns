@@ -1,10 +1,12 @@
 import { setDefaultTimeout, afterEach, describe, expect, test } from "bun:test";
 setDefaultTimeout(30_000);
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createBackupEngine, createGitleaksScanner } from "./index.ts";
+import { createGitRunner, type GitRunner } from "./git-process.ts";
+import { collectPushBlobs } from "./secret-scan.ts";
 import { git, isolatedGitEnv, sandbox, type Sandbox } from "./test-fixtures.ts";
 
 const hasGitleaks = spawnSync("gitleaks", ["version"], { stdio: "ignore" }).status === 0;
@@ -53,7 +55,7 @@ describe("gitleaks scanner", () => {
     expect(await scanner([{ path: "a.md", oid: "0".repeat(40), bytes: Buffer.from("x") }])).toEqual({ unavailable: "scanner missing: gitleaks is not installed" });
   });
 
-  test.skipIf(!hasGitleaks)("the default scanner blocks a planted key in a new file and in an unpushed user commit, without echoing it", async () => {
+  test.skipIf(!hasGitleaks)("the default scanner blocks a planted key in a new file and in an unpushed earlier snapshot, without echoing it", async () => {
     const sb = sandbox();
     sandboxes.push(sb);
     const clock = { t: Date.UTC(2026, 2, 3, 9, 0, 0) };
@@ -73,15 +75,14 @@ describe("gitleaks scanner", () => {
     expect(held.protectionAgeSeconds).toBe(40);
     expect(held.block?.reason).toBe("secret-found");
 
-    // The key leaves the scoped files but sits in an unpushed user commit that HEAD brings in.
+    // The key leaves the scoped files but stays in the unpushed earlier snapshot the push would carry,
+    // and a second key is in the scope now.
     put(sb.repo, "notes/keys.md", "removed\n");
-    put(sb.repo, "config/settings.ini", `${FAKE_LINE_2}\n`);
-    git(sb.repo, ["add", "config/settings.ini"]);
-    git(sb.repo, ["commit", "-q", "-m", "user commit with a key"]);
+    put(sb.repo, "notes/settings.ini", `${FAKE_LINE_2}\n`);
     await e.capture(sb.repo, { include: ["notes"] });
     const second = await e.pushBackup(sb.repo);
     expect(second.state).toBe("blocked");
-    expect(second.state === "blocked" && second.findings?.map((f) => f.path).sort()).toEqual(["config/settings.ini", "notes/keys.md"]);
+    expect(second.state === "blocked" && second.findings?.map((f) => f.path).sort()).toEqual(["notes/keys.md", "notes/settings.ini"]);
 
     clock.t += 20_000;
     const status = await e.status(sb.repo);
@@ -106,4 +107,28 @@ describe("gitleaks scanner", () => {
     await e.capture(sb.repo, { include: ["notes"] });
     expect((await e.pushBackup(sb.repo)).state).toBe("pushed");
   }, 60_000);
+});
+
+describe("reading the blobs to scan", () => {
+  test("blobs are read in batches under the output limit, each exactly once, and a missing object stops the scan", async () => {
+    const sb = sandbox();
+    sandboxes.push(sb);
+    const contents = Array.from({ length: 30 }, (_, i) => `document ${i} `.repeat(20 + i));
+    contents.forEach((text, i) => put(sb.repo, `notes/d${i}.md`, text));
+    git(sb.repo, ["add", "notes"]);
+    git(sb.repo, ["commit", "-q", "-m", "fixture"]);
+    const tip = spawnSync("git", ["rev-parse", "HEAD"], { cwd: sb.repo }).stdout.toString().trim();
+    const runner = createGitRunner({ hooksDir: join(sb.dir, "hooks"), env: isolatedGitEnv });
+    let calls = 0;
+    const counting: GitRunner = { run: (a, o) => { if (a[0] === "cat-file" && a[1] === "--batch") calls += 1; return runner.run(a, o); }, ok: (a, o) => { if (a[0] === "cat-file" && a[1] === "--batch") calls += 1; return runner.ok(a, o); } };
+    const collected = await collectPushBlobs({ git: counting, run: { cwd: sb.repo, timeoutMs: 30_000, maxOutputBytes: 4096 }, newTip: tip, maxBlobBytes: 1024 * 1024, maxTotalBytes: 1024 * 1024 });
+    expect(calls).toBeGreaterThan(1);
+    expect(collected.blobs.map((b) => b.bytes.toString("utf8")).sort()).toEqual([...contents].sort());
+
+    // An object the history names but this repository lacks is an error, never a smaller scan.
+    const blob = spawnSync("git", ["rev-parse", "HEAD:notes/d0.md"], { cwd: sb.repo }).stdout.toString().trim();
+    const loose = join(sb.repo, ".git", "objects", blob.slice(0, 2), blob.slice(2));
+    rmSync(loose);
+    await expect(collectPushBlobs({ git: runner, run: { cwd: sb.repo, timeoutMs: 30_000, maxOutputBytes: 1024 * 1024 }, newTip: tip, maxBlobBytes: 1024 * 1024, maxTotalBytes: 1024 * 1024 })).rejects.toThrow();
+  });
 });
