@@ -1,0 +1,30 @@
+{
+  "name": "@app-patterns/vault-sync",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Automatic backup engine for Git-versioned document folders: private-index snapshots, per-checkout backup branches, push and remote verification, and a persistent protection deadline.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build:js": "bun build ./src/index.ts --root ./src --outdir dist --target node --format esm --packages external",
+    "build:types": "tsc -p tsconfig.build.json",
+    "build": "bun run build:js && bun run build:types",
+    "test": "bun test",
+    "check": "bun run typecheck && bun test && bun run build"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "6.0.3"
+  }
+}
