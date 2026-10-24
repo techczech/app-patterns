@@ -13,8 +13,8 @@
  */
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open as openHandle, readFile, realpath, rename, rm } from "node:fs/promises";
-import { basename, dirname, extname, join } from "node:path";
+import { link, lstat, mkdir, open as openHandle, readFile, realpath, rename, rm, rmdir, stat } from "node:fs/promises";
+import { basename, dirname, extname, join, sep } from "node:path";
 import { validateId } from "./backup-ref.ts";
 import { BackupRefusedError, type BackupBlock } from "./blocks.ts";
 import { splitNul, type GitRunner } from "./git-process.ts";
@@ -97,6 +97,13 @@ export interface RestoreDeps {
   runner(): GitRunner;
 }
 
+/** Test seam: runs after the target was checked and before the file is published. */
+export const restoreTestHooks: { beforePublish?: (target: string) => void | Promise<void> } = {};
+
+const SNAPSHOT_BATCH = 200;
+const SNAPSHOT_SCAN_LIMIT = 20000;
+const SIBLING_ATTEMPTS = 20;
+
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
@@ -107,11 +114,25 @@ function privateRoot(remote: string): string {
 export function parseBackupBranch(name: string): { machine: string; checkout: string; date: string } | null {
   const parts = name.split("/");
   if (parts.length !== 4 || parts[0] !== "backup") return null;
+  if (!DAY.test(parts[3]!)) return null;
   try {
-    return { machine: validateId("machine id", parts[1]!), checkout: validateId("checkout id", parts[2]!), date: DAY.test(parts[3]!) ? parts[3]! : (() => { throw new Error("date"); })() };
+    return { machine: validateId("machine id", parts[1]!), checkout: validateId("checkout id", parts[2]!), date: parts[3]! };
   } catch {
     return null;
   }
+}
+
+const HFS_IGNORABLE = /[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g;
+
+/**
+ * True when a path component names .git on some filesystem: plain or case variants, HFS+ names with
+ * ignorable code points, NTFS names with trailing dots/spaces or a data-stream suffix, and the 8.3
+ * short name GIT~1. Mirrors git's is_hfs_dotgit and is_ntfs_dotgit.
+ */
+export function isDotGitName(part: string): boolean {
+  const plain = part.normalize("NFC");
+  if (plain.replace(HFS_IGNORABLE, "").toLowerCase() === ".git") return true;
+  return /^(?:\.git|git~1)[ .]*(?::.*)?$/i.test(plain.replace(HFS_IGNORABLE, ""));
 }
 
 /** A worktree-relative path with no empty, "." or ".." parts, no NUL, no backslash and nothing under .git. */
@@ -120,7 +141,7 @@ function cleanRelative(path: string): string[] {
     throw new RestoreRefusedError("unsafe-path", "the path must be relative to the folder");
   }
   const parts = path.split("/");
-  if (parts.some((p) => p === "" || p === "." || p === "..") || parts.some((p) => p.toLowerCase() === ".git")) {
+  if (parts.some((p) => p === "" || p === "." || p === "..") || parts.some(isDotGitName)) {
     throw new RestoreRefusedError("unsafe-path", "the path must stay inside the folder and outside .git");
   }
   return parts;
@@ -130,13 +151,13 @@ function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-function siblingName(path: string, ms: number): string {
+function siblingName(path: string, ms: number, n = 1): string {
   const d = new Date(ms);
   const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}${pad(d.getMinutes())}`;
   const dir = dirname(path);
   const ext = extname(path);
   const stem = basename(path, ext);
-  const name = `${stem} (restored ${stamp})${ext}`;
+  const name = `${stem} (restored ${stamp}${n > 1 ? ` ${n}` : ""})${ext}`;
   return dir === "." ? name : `${dir}/${name}`;
 }
 
@@ -159,7 +180,7 @@ export function createRestoreApi(deps: RestoreDeps): RestoreApi {
 
   async function fetchBackups(real: string, git: GitRunner, signal?: AbortSignal): Promise<void> {
     const dst = `${privateRoot(deps.remote)}backup/*`;
-    await git.ok(["fetch", "--quiet", "--prune", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", "--no-auto-gc", deps.remote, `+refs/heads/backup/*:${dst}`], run(real, deps.networkTimeoutMs, signal));
+    await git.ok(["fetch", "--quiet", "--prune", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", "--no-auto-gc", "--refmap=", deps.remote, `+refs/heads/backup/*:${dst}`], run(real, deps.networkTimeoutMs, signal));
   }
 
   async function checkedSnapshot(real: string, git: GitRunner, snapshot: string, signal?: AbortSignal): Promise<string> {
@@ -193,8 +214,18 @@ export function createRestoreApi(deps: RestoreDeps): RestoreApi {
     return { bytes, executable: entry.mode === "100755", parts };
   }
 
+  /** True when `dir` resolves to a real directory inside the real worktree root (same inode as the walked path). */
+  async function insideRoot(root: string, dir: string): Promise<boolean> {
+    const resolved = await realpath(dir);
+    if (resolved !== root && !resolved.startsWith(root.endsWith(sep) ? root : root + sep)) return false;
+    // Compare by device and inode, not by path text: a differently cased or normalised name for the same
+    // folder is the same folder on case-insensitive volumes.
+    const [walked, real] = await Promise.all([stat(dir), stat(resolved)]);
+    return walked.dev === real.dev && walked.ino === real.ino;
+  }
+
   /** Walks the target's directories, creating missing ones, refusing any symlink or non-directory. */
-  async function ensureDirs(root: string, parts: string[]): Promise<string> {
+  async function ensureDirs(root: string, parts: string[], created: string[]): Promise<string> {
     let current = root;
     for (const part of parts.slice(0, -1)) {
       current = join(current, part);
@@ -203,12 +234,13 @@ export function createRestoreApi(deps: RestoreDeps): RestoreApi {
         info = await lstat(current);
       } catch {
         await mkdir(current);
+        created.push(current);
         info = await lstat(current);
       }
       if (info.isSymbolicLink()) throw new RestoreRefusedError("beyond-symlink", "a folder on the way to the target is a symbolic link");
       if (!info.isDirectory()) throw new RestoreRefusedError("unsafe-path", "a file is in the way of the target folder");
     }
-    if ((await realpath(current)) !== (parts.length > 1 ? join(root, ...parts.slice(0, -1)) : root)) {
+    if (!(await insideRoot(root, current))) {
       throw new RestoreRefusedError("beyond-symlink", "the target folder is not inside the folder");
     }
     return current;
@@ -227,8 +259,9 @@ export function createRestoreApi(deps: RestoreDeps): RestoreApi {
     return { kind: "file", bytes: await readFile(file) };
   }
 
-  async function writeAtomic(dir: string, name: string, bytes: Buffer, executable: boolean): Promise<void> {
-    const temp = join(dir, `.${name}.restore-${randomBytes(6).toString("hex")}.tmp`);
+  /** Writes the bytes to a short, fixed-length temp name in `dir` and returns its path. */
+  async function stage(dir: string, bytes: Buffer, executable: boolean): Promise<string> {
+    const temp = join(dir, `.vsr-${randomBytes(8).toString("hex")}.tmp`);
     const handle = await openFile(temp, executable ? 0o755 : 0o644);
     try {
       await handle.writeFile(bytes);
@@ -239,12 +272,34 @@ export function createRestoreApi(deps: RestoreDeps): RestoreApi {
       throw error;
     }
     await handle.close();
+    return temp;
+  }
+
+  /**
+   * Publishes without replacing: a hard link fails with EEXIST if anything appeared at `file` since the
+   * check. Returns false on EEXIST. Where links are unsupported, falls back to a last-moment existence
+   * check and rename.
+   */
+  async function publishNew(temp: string, file: string): Promise<boolean> {
     try {
-      await rename(temp, join(dir, name));
+      await link(temp, file);
+      return true;
     } catch (error) {
-      await rm(temp, { force: true });
-      throw error;
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EEXIST") return false;
+      if (code !== "EPERM" && code !== "ENOTSUP" && code !== "EXDEV" && code !== "ENOSYS") throw error;
     }
+    try {
+      await lstat(file);
+      return false;
+    } catch { /* absent */ }
+    await rename(temp, file);
+    return true;
+  }
+
+  async function removeCreated(created: string[]): Promise<void> {
+    // Only folders this call created, deepest first, only if empty (rmdir refuses otherwise).
+    for (const dir of [...created].reverse()) await rmdir(dir).catch(() => undefined);
   }
 
   return {
@@ -270,16 +325,49 @@ export function createRestoreApi(deps: RestoreDeps): RestoreApi {
     async listSnapshots(repo, branch, path, options = {}) {
       const { real, git } = await openRepo(repo);
       const ref = privateRef(branch);
-      const args = ["log", "-z", "--first-parent", "--no-color", "--format=%H%x1f%ct%x1f%ce", ref];
-      if (path !== undefined) args.push("--", `:(literal)${cleanRelative(path).join("/")}`);
+      const filter = path === undefined ? null : `:(literal)${cleanRelative(path).join("/")}`;
+      const limit = Math.max(1, Math.floor(options.limit ?? 500));
+      // Engine commits are recognised by the engine identity on author OR committer: either one alone
+      // identifies a snapshot, and matching both would drop commits if a Git config rewrote one of them.
+      const isEngine = (author: string | undefined, committer: string | undefined) => author === deps.authorEmail || committer === deps.authorEmail;
+      const parse = (record: string) => {
+        const [id, time, author, committer] = record.split("\x1f");
+        return id && OID.test(id) ? { id, time: Number(time) * 1000, engine: isEngine(author, committer) } : null;
+      };
+      const format = "--format=%H%x1f%ct%x1f%ae%x1f%ce";
+      // A chain's first snapshot has the user's HEAD as first parent, so walk newest first in bounded
+      // batches and stop at the first commit that is not the engine's.
+      const chain: SnapshotInfo[] = [];
+      let boundary: string | null = null;
+      let skip = 0;
+      scan: while (skip < SNAPSHOT_SCAN_LIMIT) {
+        const found = await git.run(["log", "-z", "--first-parent", "--no-color", `--max-count=${SNAPSHOT_BATCH}`, `--skip=${skip}`, format, ref], run(real, deps.localTimeoutMs, options.signal));
+        if (found.code !== 0) throw new RestoreRefusedError("bad-snapshot", "that backup branch has not been fetched; list the backups first");
+        const records = splitNul(found.stdout);
+        for (const record of records) {
+          const row = parse(record);
+          if (!row) continue;
+          if (!row.engine) {
+            boundary = row.id;
+            break scan;
+          }
+          chain.push({ id: row.id, time: row.time });
+          if (!filter && chain.length >= limit) break scan;
+        }
+        if (records.length < SNAPSHOT_BATCH) break;
+        skip += records.length;
+      }
+      if (!filter) return chain.slice(0, limit);
+      const args = ["log", "-z", "--first-parent", "--no-color", `--max-count=${boundary ? limit : SNAPSHOT_SCAN_LIMIT}`, format, ref];
+      if (boundary) args.push(`^${boundary}`);
+      args.push("--", filter);
       const found = await git.run(args, run(real, deps.localTimeoutMs, options.signal));
       if (found.code !== 0) throw new RestoreRefusedError("bad-snapshot", "that backup branch has not been fetched; list the backups first");
-      const limit = options.limit ?? 500;
       const out: SnapshotInfo[] = [];
       for (const record of splitNul(found.stdout)) {
-        const [id, time, email] = record.split("\x1f");
-        if (!id || email !== deps.authorEmail || !OID.test(id)) continue;
-        out.push({ id, time: Number(time) * 1000 });
+        const row = parse(record);
+        if (!row || !row.engine) continue;
+        out.push({ id: row.id, time: row.time });
         if (out.length >= limit) break;
       }
       return out;
@@ -293,30 +381,59 @@ export function createRestoreApi(deps: RestoreDeps): RestoreApi {
     async restoreFile(repo, snapshot, path, options = {}) {
       const { real, git } = await openRepo(repo);
       const { bytes, executable, parts } = await readBlob(real, git, snapshot, path, options.signal);
-      const targetParts = options.targetPath === undefined ? parts : cleanRelative(options.targetPath);
-      let target = targetParts;
+      const target = options.targetPath === undefined ? parts : cleanRelative(options.targetPath);
+      const explicit = options.targetPath !== undefined;
+      const overwrite = options.overwrite === true;
       options.signal?.throwIfAborted();
-      let dir = await ensureDirs(real, target);
-      let state = await existing(join(dir, target[target.length - 1]!));
-      let sibling = false;
-      if (state.kind === "file") {
-        if (state.bytes.equals(bytes)) return { state: "unchanged", path: target.join("/"), sibling: false, bytes: bytes.length };
-        if (options.overwrite !== true) {
-          if (options.targetPath !== undefined) {
-            throw new RestoreRefusedError("target-exists", "the target has different content; choose another name or set overwrite");
+      const created: string[] = [];
+      let temp: string | null = null;
+      try {
+        const dir = await ensureDirs(real, target, created);
+        const names = [target];
+        if (!overwrite && !explicit) {
+          for (let n = 1; n <= SIBLING_ATTEMPTS; n += 1) names.push(siblingName(target.join("/"), deps.now(), n).split("/"));
+        }
+        for (let i = 0; i < names.length; i += 1) {
+          const file = join(dir, names[i]![names[i]!.length - 1]!);
+          const done = async (state: RestoreResult["state"]): Promise<RestoreResult> => {
+            const result: RestoreResult = { state, path: names[i]!.join("/"), sibling: i > 0, bytes: bytes.length };
+            if (state === "restored") await checkStillInside(file);
+            return result;
+          };
+          // Twice: a file that appears between the check and the publish is looked at once more.
+          for (let attempt = 0; attempt < 2; attempt += 1) {
+            const state = await existing(file);
+            if (state.kind === "file" && state.bytes.equals(bytes)) return await done("unchanged");
+            if (state.kind === "file" && !overwrite) break;
+            temp ??= await stage(dir, bytes, executable);
+            await restoreTestHooks.beforePublish?.(file);
+            if (overwrite) {
+              await rename(temp, file);
+              temp = null;
+              return await done("restored");
+            }
+            if (await publishNew(temp, file)) return await done("restored");
           }
-          target = siblingName(target.join("/"), deps.now()).split("/");
-          dir = await ensureDirs(real, target);
-          state = await existing(join(dir, target[target.length - 1]!));
-          if (state.kind === "file") {
-            if (state.bytes.equals(bytes)) return { state: "unchanged", path: target.join("/"), sibling: true, bytes: bytes.length };
-            throw new RestoreRefusedError("target-exists", "a restored copy with this name already exists and differs");
-          }
-          sibling = true;
+          if (explicit) throw new RestoreRefusedError("target-exists", "the target has different content; choose another name or set overwrite");
+        }
+        throw new RestoreRefusedError("target-exists", "restored copies with this name already exist and differ");
+      } catch (error) {
+        // The temp file goes first: a created folder is only removed when empty.
+        if (temp) await rm(temp, { force: true });
+        temp = null;
+        await removeCreated(created);
+        throw error;
+      } finally {
+        if (temp) await rm(temp, { force: true });
+      }
+
+      async function checkStillInside(file: string): Promise<void> {
+        // A folder swapped for a symlink during the write must not leave a file outside the worktree.
+        if (!(await insideRoot(real, dirname(file)).catch(() => false))) {
+          await rm(file, { force: true });
+          throw new RestoreRefusedError("beyond-symlink", "the target folder is not inside the folder");
         }
       }
-      await writeAtomic(dir, target[target.length - 1]!, bytes, executable);
-      return { state: "restored", path: target.join("/"), sibling, bytes: bytes.length };
     },
   };
 }

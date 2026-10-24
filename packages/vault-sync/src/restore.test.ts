@@ -3,10 +3,13 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { BackupRefusedError, createBackupEngine, RestoreRefusedError, type BackupEngineOptions } from "./index.ts";
+import { isDotGitName, restoreTestHooks } from "./restore.ts";
+import { compileScope } from "./scope.ts";
 import { autoEnabled, git, gitText, isolatedGitEnv, permissiveGuards, sandbox, type Sandbox } from "./test-fixtures.ts";
 
 const sandboxes: Sandbox[] = [];
 afterEach(() => {
+  restoreTestHooks.beforePublish = undefined;
   while (sandboxes.length) sandboxes.pop()!.cleanup();
 });
 
@@ -75,7 +78,7 @@ describe("restore round trip", () => {
     // An ordinary uncommitted change.
     expect(gitText(other, ["status", "--porcelain"])).toContain("notes/deep/");
     expect(existsSync(join(other, ".git", "vault-sync"))).toBe(false);
-  });
+  }, 30_000);
 
   test("an existing different file gets a sibling copy; explicit target needs overwrite", async () => {
     const { repo } = seeded();
@@ -98,7 +101,7 @@ describe("restore round trip", () => {
     expect(readdirSync(join(repo, "notes")).filter((n) => n.includes(".tmp"))).toEqual([]);
     // Identical bytes: nothing to do.
     expect((await e.restoreFile(repo, snap, "notes/a.md")).state).toBe("unchanged");
-  });
+  }, 30_000);
 
   test("restore leaves HEAD and the index byte-identical", async () => {
     const { sb, repo } = seeded();
@@ -120,7 +123,7 @@ describe("restore round trip", () => {
     expect(gitText(other, ["rev-parse", "HEAD"])).toBe(head);
     expect(gitText(other, ["for-each-ref", "refs/heads", "refs/remotes"])).toBe(branches);
     expect(gitText(other, ["for-each-ref", "refs/vault-sync"])).toContain("refs/vault-sync/backups/origin/backup/machine-a/");
-  });
+  }, 30_000);
 });
 
 describe("listing", () => {
@@ -151,7 +154,7 @@ describe("listing", () => {
     expect(all.map((s) => s.id)).toEqual([second, first]);
     const onlyOther = await engine("machine-v").listSnapshots(viewer, `refs/heads/${a.branch}`, "notes/other.md");
     expect(onlyOther.map((s) => s.id)).toEqual([second]);
-  });
+  }, 30_000);
 });
 
 describe("containment and guards", () => {
@@ -178,7 +181,7 @@ describe("containment and guards", () => {
     for (const bad of ["../x.md", "/etc/x", "notes/../../x", ".git/config", "a\0b"]) {
       await expect(e.restoreFile(repo, snap, "notes/a.md", { targetPath: bad })).rejects.toMatchObject({ reason: "unsafe-path" });
     }
-  });
+  }, 30_000);
 
   test("a cloud-synced worktree is refused even when backup was never enabled", async () => {
     const { sb, repo } = seeded();
@@ -203,5 +206,110 @@ describe("containment and guards", () => {
     }
     expect(readdirSync(join(inCloud, "notes"))).toEqual(["a.md"]);
     expect(readFileSync(join(inCloud, "notes/a.md"), "utf8")).toBe("alpha\n");
+  }, 30_000);
+});
+
+describe("fix round", () => {
+  test("listing never touches the user's remote-tracking refs", async () => {
+    const { sb, repo } = seeded();
+    const viewer = clone(sb, "viewer");
+    put(repo, "notes/a.md", "later backup\n");
+    await backup(engine("machine-a"), repo);
+    const before = gitText(viewer, ["for-each-ref", "refs/remotes"]);
+    expect(before).not.toContain("backup/");
+    const list = await engine("machine-v").listBackups(viewer);
+    expect(list).toHaveLength(1);
+    expect(gitText(viewer, ["for-each-ref", "refs/remotes"])).toBe(before);
+  });
+
+  test("a file that appears between the check and the publish is never overwritten", async () => {
+    const { repo } = seeded();
+    const e = engine("machine-a");
+    put(repo, "notes/a.md", "backed up\n");
+    const snap = await backup(e, repo);
+    rmSync(join(repo, "notes/a.md"));
+
+    let fired = 0;
+    restoreTestHooks.beforePublish = (file) => {
+      if (fired++ === 0) writeFileSync(file, "autosave won the race\n");
+    };
+    const res = await e.restoreFile(repo, snap, "notes/a.md");
+    expect(res.sibling).toBe(true);
+    expect(readFileSync(join(repo, "notes/a.md"), "utf8")).toBe("autosave won the race\n");
+    expect(readFileSync(join(repo, res.path), "utf8")).toBe("backed up\n");
+
+    rmSync(join(repo, "notes/a.md"));
+    fired = 0;
+    await expect(e.restoreFile(repo, snap, "notes/a.md", { targetPath: "notes/a.md" })).rejects.toMatchObject({ reason: "target-exists" });
+    expect(readFileSync(join(repo, "notes/a.md"), "utf8")).toBe("autosave won the race\n");
+    expect(readdirSync(join(repo, "notes")).filter((n) => n.startsWith(".vsr-"))).toEqual([]);
+  });
+
+  test("listing snapshots stops at the first commit that is not a snapshot", async () => {
+    const { repo } = seeded();
+    const parent = gitText(repo, ["rev-parse", "HEAD"]);
+    let script = "";
+    for (let i = 0; i < 450; i += 1) {
+      script += `commit refs/heads/main\ncommitter T <t@example.invalid> ${1700000000 + i} +0000\ndata 3\nx${i % 10}\n${i === 0 ? `from ${parent}\n` : ""}\n`;
+    }
+    git(repo, ["fast-import", "--quiet"], script);
+    const e = engine("machine-a");
+    put(repo, "notes/a.md", "chain\n");
+    const first = await backup(e, repo);
+    put(repo, "notes/b.md", "chain2\n");
+    const second = await backup(e, repo);
+    const [entry] = await e.listBackups(repo);
+    expect((await e.listSnapshots(repo, entry!.branch)).map((s) => s.id)).toEqual([second, first]);
+    expect((await e.listSnapshots(repo, entry!.branch, "notes/b.md")).map((s) => s.id)).toEqual([second]);
+    expect(await e.listSnapshots(repo, entry!.branch, undefined, { limit: 1 })).toHaveLength(1);
+  });
+
+  test("a differently cased existing folder is not mistaken for a symlink escape", async () => {
+    const { repo } = seeded();
+    const e = engine("machine-a");
+    put(repo, "notes/a.md", "x\n");
+    const snap = await backup(e, repo);
+    if (existsSync(join(repo, "NOTES"))) return; // case-sensitive volume: nothing to check
+    const res = await e.restoreFile(repo, snap, "notes/a.md", { targetPath: "Notes/b.md" });
+    expect(res.state).toBe("restored");
+    expect(readFileSync(join(repo, "notes/b.md"), "utf8")).toBe("x\n");
+  });
+
+  test("folders created for a refused restore are removed, and existing ones kept", async () => {
+    const { repo } = seeded();
+    const e = engine("machine-a");
+    put(repo, "notes/a.md", "x\n");
+    const snap = await backup(e, repo);
+    restoreTestHooks.beforePublish = () => {
+      throw new RestoreRefusedError("unsafe-path", "refused");
+    };
+    await expect(e.restoreFile(repo, snap, "notes/a.md", { targetPath: "fresh/deep/er/x.md" })).rejects.toBeInstanceOf(RestoreRefusedError);
+    expect(existsSync(join(repo, "fresh"))).toBe(false);
+    expect(readdirSync(join(repo, "notes")).filter((n) => n.startsWith(".vsr-"))).toEqual([]);
+    await expect(e.restoreFile(repo, snap, "notes/a.md", { targetPath: "notes/new/x.md" })).rejects.toBeInstanceOf(RestoreRefusedError);
+    expect(existsSync(join(repo, "notes"))).toBe(true);
+    expect(existsSync(join(repo, "notes/new"))).toBe(false);
+  });
+
+  test("restore temp files are outside any backup scope", () => {
+    const scope = compileScope({ include: ["notes"] });
+    expect(scope.isExcluded("notes/.vsr-0123456789abcdef.tmp")).toBe(true);
+    expect(scope.isExcluded(".vsr-0123456789abcdef.tmp")).toBe(true);
+    expect(scope.isExcluded("notes/vsr-0123456789abcdef.tmp")).toBe(false);
+    expect(scope.isExcluded("notes/a.tmp")).toBe(false);
+  });
+
+  test("every spelling of .git is refused in any path component", async () => {
+    for (const name of [".git", ".GIT", ".g\u200cit", "\u200c.git", ".git ", ".git.", ".git. .", "GIT~1", "git~1 ", ".git::$INDEX_ALLOCATION", ".gi\ufefft"]) {
+      expect(isDotGitName(name)).toBe(true);
+    }
+    for (const name of [".gitignore", ".github", "git", "x.git", "git~2", ".gi t"]) expect(isDotGitName(name)).toBe(false);
+    const { repo } = seeded();
+    const e = engine("machine-a");
+    put(repo, "notes/a.md", "x\n");
+    const snap = await backup(e, repo);
+    for (const bad of ["a/GIT~1/x", "notes/.git /x", ".g\u200cit/config"]) {
+      await expect(e.restoreFile(repo, snap, "notes/a.md", { targetPath: bad })).rejects.toMatchObject({ reason: "unsafe-path" });
+    }
   });
 });

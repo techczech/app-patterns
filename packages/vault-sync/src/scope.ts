@@ -112,8 +112,12 @@ export function compileScope(scope: BackupScope): CompiledScope {
   };
 }
 
+/** Temp files written by the restore API (fixed-length random name); a crash leftover is never backed up. */
+export const RESTORE_TEMP = /^\.vsr-[0-9a-f]{16}\.tmp$/;
+
 function isGitPath(path: string): boolean {
-  return path.split("/").includes(".git");
+  const parts = path.split("/");
+  return parts.includes(".git") || RESTORE_TEMP.test(parts[parts.length - 1]!);
 }
 
 export interface SkippedPath {
