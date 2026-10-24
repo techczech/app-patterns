@@ -8,13 +8,21 @@
  * - Pushes are never forced; one checkout is the only writer of its chain, so a rejection is an error.
  * - Only `ls-remote` showing the pushed object id counts as verified, and only verification moves the
  *   oldest unprotected edit forward.
+ * - Guards run on every operation: a worktree in a cloud-synced folder or on a network mount is refused;
+ *   capture, push and verify need an enablement record that still matches the folder and remote; a push
+ *   also needs a private (or explicitly confirmed public) remote and a clean secret scan. A refusal
+ *   writes no Git object or ref and leaves the deadline as it was.
  */
 import { createHash } from "node:crypto";
-import { devNull } from "node:os";
-import { lstat, readdir, realpath, rm, stat } from "node:fs/promises";
+import { devNull, homedir } from "node:os";
+import { access, lstat, readdir, realpath, rm, stat } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { backupPrefix, backupRef, latestDayRef, validateId } from "./backup-ref.ts";
-import { applyCapture, applyPushed, applyVerified, noteEdit as noteEditInRecord, protectionAgeSeconds, withError, type BackupErrorRecord, type DeadlineRecord, type SnapshotCoverage } from "./deadline.ts";
+import { BackupRefusedError, type BackupBlock, type BlockReason } from "./blocks.ts";
+import { readEnablement, removeEnablement, urlDigest, writeEnablement, type EnablementRecord } from "./enablement.ts";
+import { defaultMountInfo, isCloudSyncedLocation, isNetworkMount, type MountInfoReader } from "./location.ts";
+import { collectPushBlobs, createGitleaksScanner, describeFindings, type NotScannedBlob, type SecretFinding, type SecretScanner, type SecretScanResult } from "./secret-scan.ts";
+import { applyCapture, applyPushed, applyVerified, noteEdit as noteEditInRecord, protectionAgeSeconds, withBlock, withError, type BackupErrorRecord, type DeadlineRecord, type SnapshotCoverage } from "./deadline.ts";
 import { checkoutId as readCheckoutId, engineFolder, ensureEngineFolder, loadRecord, saveRecord, withFolderLock, type EngineFolder } from "./engine-store.ts";
 import { createGitRunner, GitProcessError, splitNul, type GitRunner } from "./git-process.ts";
 import { compileScope, listScope, type BackupScope, type SkippedPath } from "./scope.ts";
@@ -42,6 +50,42 @@ export interface BackupEngineOptions {
   gitPath?: string;
   /** Extra environment for every git call (after GIT_* variables are dropped). */
   gitEnv?: Record<string, string>;
+  /** Home directory for the cloud-folder rules. Default os.homedir(). */
+  homeDir?: string;
+  /** Platform for the cloud-folder and mount rules. Default process.platform. */
+  platform?: NodeJS.Platform;
+  /** Environment read for OneDrive folders on Windows. Default process.env. */
+  environment?: Record<string, string | undefined>;
+  /** Mount lookup for the network-mount rule. Default reads the platform's mount table. */
+  mountInfo?: MountInfoReader;
+  /**
+   * Visibility of a remote, given its push URL (which may carry credentials; do not log it). Default
+   * answers "unknown", so pushes stay held back until an app supplies a real check.
+   */
+  remoteVisibility?: (remoteUrl: string) => Promise<RemoteVisibility>;
+  /** A definite visibility answer is reused for this long. Default 10 minutes. */
+  visibilityRecheckMs?: number;
+  /** Secret scanner run before each push. Default runs gitleaks. */
+  secretScanner?: SecretScanner;
+  /** Blobs above this size are not scanned. Default 10 MiB. */
+  maxScanBlobBytes?: number;
+  /** A push whose new blobs together exceed this is held back as too large to scan. Default 512 MiB. */
+  maxScanTotalBytes?: number;
+}
+
+export type RemoteVisibility = "private" | "public" | "unknown";
+
+export interface EnableOptions {
+  /** Configured remote name. Default: the engine's remote. */
+  remote?: string;
+  /** Confirms that backup branches may be published to a public remote. */
+  visibilityConfirmedPublic?: boolean;
+}
+
+export interface EnableResult {
+  remote: string;
+  realPath: string;
+  visibility: RemoteVisibility;
 }
 
 export interface OperationOptions {
@@ -73,13 +117,15 @@ export interface CaptureResult {
 }
 
 export type PushResult =
-  | { state: "pushed" | "up-to-date"; ref: string; snapshot: string }
+  | { state: "pushed" | "up-to-date"; ref: string; snapshot: string; notScanned: NotScannedBlob[] }
+  | { state: "blocked"; reason: BlockReason; message: string; findings?: SecretFinding[]; notScanned?: NotScannedBlob[] }
   | { state: "rejected" | "failed"; ref: string; snapshot: string; message: string }
   | { state: "no-snapshot"; message: string };
 
 export type VerifyResult =
   | { verified: true; ref: string; snapshot: string }
-  | { verified: false; state: "not-pushed" | "missing-on-remote" | "mismatch" | "failed"; ref?: string; expected?: string; remote?: string; message?: string };
+  | { verified: false; state: "not-pushed" | "missing-on-remote" | "mismatch" | "failed"; ref?: string; expected?: string; remote?: string; message?: string }
+  | { verified: false; state: "blocked"; reason: BlockReason; message: string };
 
 export interface BackupStatus {
   machineId: string;
@@ -97,9 +143,19 @@ export interface BackupStatus {
   recoveredFromDamagedRecord: boolean;
   /** Hooks present in the repository that the engine does not run. */
   repositoryHooksNotRun: string[];
+  /** True when an enablement record exists and still matches the folder and remote. */
+  enabled: boolean;
+  remote: string | null;
+  /** Why backup is currently held back, or null. */
+  block: BackupBlock | null;
 }
 
 export interface BackupEngine {
+  /** Turns backup on for this checkout. Refuses cloud-synced folders and unconfirmed public remotes. */
+  enable(repo: string, options?: EnableOptions): Promise<EnableResult>;
+  /** Turns backup off for this checkout. */
+  disable(repo: string): Promise<void>;
+  /** Throws BackupRefusedError when a guard refuses. */
   capture(repo: string, scope: BackupScope, options?: OperationOptions): Promise<CaptureResult>;
   pushBackup(repo: string, options?: OperationOptions): Promise<PushResult>;
   verify(repo: string, options?: OperationOptions): Promise<VerifyResult>;
@@ -140,16 +196,31 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
   const maxOutputBytes = options.maxOutputBytes ?? 64 * 1024 * 1024;
   const lockWaitMs = options.lockWaitMs ?? 120_000;
   const author = options.author ?? { name: "Automatic backup", email: "backup@vault-sync.invalid" };
+  const platform = options.platform ?? process.platform;
+  const environment = options.environment ?? process.env;
+  const mountInfo = options.mountInfo ?? defaultMountInfo(platform);
+  const remoteVisibility = options.remoteVisibility ?? (async (): Promise<RemoteVisibility> => "unknown");
+  const visibilityRecheckMs = options.visibilityRecheckMs ?? 10 * 60_000;
+  const secretScanner = options.secretScanner ?? createGitleaksScanner();
+  const maxScanBlobBytes = options.maxScanBlobBytes ?? 10 * 1024 * 1024;
+  const maxScanTotalBytes = options.maxScanTotalBytes ?? 512 * 1024 * 1024;
 
   const contexts = new Map<string, Promise<RepoContext>>();
   const queues = new Map<string, Promise<unknown>>();
+  /** Last definite visibility answer per checkout; "unknown" is never kept, so it is asked again. */
+  const visibility = new Map<string, { digest: string; value: "private" | "public"; checkedAt: number }>();
+  let homeDirs: Promise<string[]> | null = null;
 
   const local = (ctx: RepoContext, signal?: AbortSignal, env?: Record<string, string>) => ({ cwd: ctx.root, timeoutMs: localTimeoutMs, maxOutputBytes, signal, env });
   const network = (ctx: RepoContext, signal?: AbortSignal) => ({ cwd: ctx.root, timeoutMs: networkTimeoutMs, maxOutputBytes, signal });
 
-  async function openRepo(repo: string): Promise<RepoContext> {
+  async function realRoot(repo: string): Promise<string> {
     if (typeof repo !== "string" || !isAbsolute(repo)) throw new Error("repo must be an absolute path to a worktree root");
-    const real = await realpath(resolve(repo));
+    return realpath(resolve(repo));
+  }
+
+  /** Reads the repository layout without writing anything. */
+  async function locate(real: string): Promise<{ gitDir: string; common: string; format: "sha1" | "sha256" }> {
     const probe = createGitRunner({ gitPath: options.gitPath, hooksDir: devNull, env: options.gitEnv });
     const probeOptions = { cwd: real, timeoutMs: localTimeoutMs, maxOutputBytes: 64 * 1024 };
     const bare = (await probe.ok(["rev-parse", "--is-bare-repository"], probeOptions)).toString("utf8").trim();
@@ -158,6 +229,11 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
     const [top, gitDir, format, common] = lines;
     if (!top || !gitDir || !common || (format !== "sha1" && format !== "sha256")) throw new Error("could not read repository layout");
     if ((await realpath(top)) !== real) throw new Error("repo must be the worktree root, not a folder inside it");
+    return { gitDir, common, format };
+  }
+
+  async function openRepo(real: string): Promise<RepoContext> {
+    const { gitDir, common, format } = await locate(real);
     const folder = engineFolder(gitDir);
     await ensureEngineFolder(folder);
     const checkoutId = await readCheckoutId(folder);
@@ -174,15 +250,162 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
     };
   }
 
-  function context(repo: string): Promise<RepoContext> {
-    const key = resolve(repo);
-    let ctx = contexts.get(key);
+  /** Keyed by the real path, resolved on every call, so a moved or relinked folder gets a fresh context. */
+  function context(real: string): Promise<RepoContext> {
+    let ctx = contexts.get(real);
     if (!ctx) {
-      ctx = openRepo(repo);
-      contexts.set(key, ctx);
-      ctx.catch(() => contexts.delete(key));
+      ctx = openRepo(real);
+      contexts.set(real, ctx);
+      ctx.catch(() => contexts.delete(real));
     }
     return ctx;
+  }
+
+  const block = (reason: BlockReason, message: string, extra: Partial<BackupBlock> = {}): BackupBlock => ({ ...extra, reason, at: now(), message });
+
+  function homes(): Promise<string[]> {
+    homeDirs ??= (async () => {
+      const home = options.homeDir ?? homedir();
+      try {
+        const real = await realpath(home);
+        return real === home ? [home] : [home, real];
+      } catch {
+        return [home];
+      }
+    })();
+    return homeDirs;
+  }
+
+  /** Cloud-folder and network-mount rules, checked against the current real path on every operation. */
+  async function locationBlock(real: string): Promise<BackupBlock | null> {
+    for (const home of await homes()) {
+      const found = isCloudSyncedLocation(real, { homeDir: home, platform, env: environment });
+      if (found.cloud) return block("cloud-synced-location", "this folder is inside a cloud-synced folder (such as OneDrive, iCloud Drive, Dropbox or Google Drive); automatic backup does not run there");
+    }
+    let mount = null;
+    try {
+      mount = await mountInfo(real);
+    } catch {
+      // Fail closed: if the drive type cannot be read, the folder may be on a network share.
+      return block("cloud-synced-location", "could not check what kind of drive this folder is on; automatic backup does not run until it can");
+    }
+    if (mount && isNetworkMount(mount)) return block("cloud-synced-location", "this folder is on a network drive; automatic backup does not run there");
+    return null;
+  }
+
+  const notEnabled = () => block("not-enabled", "automatic backup has not been turned on for this folder");
+
+  /** Refusals that need no engine folder: a cloud location, or a checkout never enabled. */
+  async function admit(repo: string): Promise<{ ctx: RepoContext } | { block: BackupBlock }> {
+    const real = await realRoot(repo);
+    const where = await locationBlock(real);
+    if (where) return { block: where };
+    if (!contexts.has(real)) {
+      const { gitDir } = await locate(real);
+      try {
+        await access(engineFolder(gitDir).enablementFile);
+      } catch {
+        return { block: notEnabled() };
+      }
+    }
+    return { ctx: await context(real) };
+  }
+
+  async function remoteUrls(ctx: RepoContext, name: string, signal?: AbortSignal): Promise<{ fetch: string; push: string } | null> {
+    const fetch = await ctx.git.run(["remote", "get-url", name], local(ctx, signal));
+    const push = await ctx.git.run(["remote", "get-url", "--push", name], local(ctx, signal));
+    if (fetch.code !== 0 || push.code !== 0) return null;
+    return { fetch: fetch.stdout.toString("utf8").trim(), push: push.stdout.toString("utf8").trim() };
+  }
+
+  interface Enabled {
+    record: EnablementRecord;
+    pushUrl: string;
+  }
+
+  /** The enablement record must exist and still match the folder's real path and the remote's URLs. */
+  async function enablementState(ctx: RepoContext, signal?: AbortSignal): Promise<{ enabled: Enabled } | { block: BackupBlock }> {
+    const record = await readEnablement(ctx.folder.enablementFile);
+    if (!record) return { block: notEnabled() };
+    if (record.realPath !== ctx.root) return { block: block("enablement-stale", "this folder was moved or renamed after automatic backup was turned on; turn it on again here") };
+    const urls = await remoteUrls(ctx, record.remote, signal);
+    if (!urls) return { block: block("enablement-stale", "the backup remote is no longer configured; turn automatic backup on again") };
+    if (urlDigest(urls.fetch) !== record.fetchUrlDigest || urlDigest(urls.push) !== record.pushUrlDigest) {
+      return { block: block("enablement-stale", "the backup remote's address changed after automatic backup was turned on; turn it on again") };
+    }
+    return { enabled: { record, pushUrl: urls.push } };
+  }
+
+  async function checkVisibility(ctx: RepoContext, digest: string, pushUrl: string, force: boolean): Promise<RemoteVisibility> {
+    const key = ctx.folder.dir;
+    const cached = visibility.get(key);
+    const t = now();
+    if (!force && cached && cached.digest === digest && t >= cached.checkedAt && t - cached.checkedAt < visibilityRecheckMs) return cached.value;
+    let value: RemoteVisibility;
+    try {
+      const answer = await remoteVisibility(pushUrl);
+      value = answer === "private" || answer === "public" ? answer : "unknown";
+    } catch {
+      value = "unknown";
+    }
+    if (value === "unknown") visibility.delete(key);
+    else visibility.set(key, { digest, value, checkedAt: t });
+    return value;
+  }
+
+  function visibilityBlock(value: RemoteVisibility, confirmedPublic: boolean): BackupBlock | null {
+    if (value === "public" && !confirmedPublic) return block("public-remote-unconfirmed", "the backup remote is public; confirm that drafts may be published there before backup continues");
+    if (value === "unknown") return block("visibility-unknown", "could not check whether the backup remote is private; snapshots are kept on this computer until it can be checked");
+    return null;
+  }
+
+  /** Scans the blobs this push would add; any doubt holds the push back. */
+  async function scanForPush(ctx: RepoContext, tip: string, remoteName: string, signal?: AbortSignal): Promise<{ notScanned: NotScannedBlob[] } | { block: BackupBlock }> {
+    const record = await loadRecord(ctx.folder);
+    const known: string[] = [];
+    const verified = record.lastVerifiedSnapshot;
+    if (verified) {
+      const present = await ctx.git.run(["cat-file", "-e", `${verified}^{commit}`], local(ctx, signal));
+      if (present.code === 0) known.push(verified);
+    }
+    let collected;
+    try {
+      collected = await collectPushBlobs({ git: ctx.git, run: local(ctx, signal), newTip: tip, remoteKnown: known, remoteTrackingGlob: `refs/remotes/${remoteName}/*`, maxBlobBytes: maxScanBlobBytes, maxTotalBytes: maxScanTotalBytes });
+    } catch {
+      signal?.throwIfAborted();
+      return { block: block("scanner-unavailable", "could not list the files this backup would send, so they were not scanned") };
+    }
+    if (collected.overTotal) return { block: block("too-large-to-scan", "the files this backup would send are larger in total than the secret-scan limit") };
+    const largeText = collected.notScanned.filter((b) => !b.binary);
+    if (largeText.length > 0) {
+      const names = largeText.slice(0, 20).map((b) => b.path).join(", ");
+      return { block: block("too-large-to-scan", `${largeText.length} text file${largeText.length === 1 ? " is" : "s are"} larger than the secret-scan limit: ${names}`, { notScanned: largeText }) };
+    }
+    let result: SecretScanResult;
+    try {
+      result = await secretScanner(collected.blobs);
+    } catch {
+      result = { unavailable: "the secret scanner failed" };
+    }
+    if ("unavailable" in result) return { block: block("scanner-unavailable", `secret scan could not run: ${String(result.unavailable).slice(0, 200)}`) };
+    if (result.findings.length > 0) {
+      const findings = result.findings.map((f) => ({ path: String(f.path), rule: String(f.rule) }));
+      return { block: block("secret-found", describeFindings(findings), { findings }) };
+    }
+    return { notScanned: collected.notScanned };
+  }
+
+  function blockedPush(b: BackupBlock): PushResult {
+    const result: PushResult = { state: "blocked", reason: b.reason, message: b.message };
+    if (b.findings) result.findings = b.findings;
+    if (b.notScanned) result.notScanned = b.notScanned;
+    return result;
+  }
+
+  /** Records why a push was held back; the deadline fields are untouched. */
+  async function holdPush(ctx: RepoContext, b: BackupBlock): Promise<PushResult> {
+    await persist(ctx, (r) => withBlock(r, b));
+    return blockedPush(b);
   }
 
   /** Serialises operations per checkout inside this process; the folder lock covers other processes. */
@@ -378,9 +601,49 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
   }
 
   return {
+    async enable(repo, opts = {}) {
+      const real = await realRoot(repo);
+      const where = await locationBlock(real);
+      if (where) throw new BackupRefusedError(where);
+      const name = opts.remote ?? remote;
+      if (!REMOTE_NAME.test(name)) throw new Error("remote must be the name of a configured remote");
+      const confirmed = opts.visibilityConfirmedPublic === true;
+      const ctx = await context(real);
+      return exclusive(ctx, async (): Promise<EnableResult> => {
+        const urls = await remoteUrls(ctx, name);
+        if (!urls) throw new Error(`remote ${name} is not configured in this repository`);
+        const pushUrlDigest = urlDigest(urls.push);
+        const seen = await checkVisibility(ctx, pushUrlDigest, urls.push, true);
+        if (seen === "public" && !confirmed) throw new BackupRefusedError(visibilityBlock(seen, false)!);
+        await writeEnablement(ctx.folder.enablementFile, {
+          schema: 1,
+          realPath: ctx.root,
+          remote: name,
+          fetchUrlDigest: urlDigest(urls.fetch),
+          pushUrlDigest,
+          visibilityConfirmedPublic: confirmed,
+          enabledAt: now(),
+        });
+        await persist(ctx, (r) => ({ ...r, lastBlock: null }));
+        return { remote: name, realPath: ctx.root, visibility: seen };
+      });
+    },
+
+    async disable(repo) {
+      const ctx = await context(await realRoot(repo));
+      await exclusive(ctx, async () => {
+        await removeEnablement(ctx.folder.enablementFile);
+        visibility.delete(ctx.folder.dir);
+      });
+    },
+
     async capture(repo, scope, opts = {}) {
-      const ctx = await context(repo);
+      const admitted = await admit(repo);
+      if ("block" in admitted) throw new BackupRefusedError(admitted.block);
+      const { ctx } = admitted;
       return exclusive(ctx, async () => {
+        const state = await enablementState(ctx, opts.signal);
+        if ("block" in state) throw new BackupRefusedError(state.block);
         try {
           return await captureLocked(ctx, scope, opts.signal);
         } catch (error) {
@@ -391,13 +654,24 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
     },
 
     async pushBackup(repo, opts = {}) {
-      const ctx = await context(repo);
+      const admitted = await admit(repo);
+      if ("block" in admitted) return blockedPush(admitted.block);
+      const { ctx } = admitted;
       return exclusive(ctx, async (): Promise<PushResult> => {
+        const state = await enablementState(ctx, opts.signal);
+        if ("block" in state) return blockedPush(state.block);
+        const { record: enabled, pushUrl } = state.enabled;
+        const seen = await checkVisibility(ctx, enabled.pushUrlDigest, pushUrl, false);
+        const hidden = visibilityBlock(seen, enabled.visibilityConfirmedPublic);
+        if (hidden) return holdPush(ctx, hidden);
         const current = await latest(ctx, opts.signal);
         if (!current) return { state: "no-snapshot", message: "no backup snapshot has been captured yet" };
+        const scanned = await scanForPush(ctx, current.oid, enabled.remote, opts.signal);
+        if ("block" in scanned) return holdPush(ctx, scanned.block);
+        const target = enabled.remote;
         let result;
         try {
-          result = await ctx.git.run(["push", "--porcelain", "--no-follow-tags", "--no-signed", "--recurse-submodules=no", remote, `${current.ref}:${current.ref}`], network(ctx, opts.signal));
+          result = await ctx.git.run(["push", "--porcelain", "--no-follow-tags", "--no-signed", "--recurse-submodules=no", target, `${current.ref}:${current.ref}`], network(ctx, opts.signal));
         } catch (error) {
           const message = (error as Error).message;
           await recordError(ctx, "push-failed", message);
@@ -416,19 +690,24 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
           return { state: "failed", ref: current.ref, snapshot: current.oid, message };
         }
         await persist(ctx, (r) => applyPushed(r, current.oid, current.ref));
-        return { state: flag === "=" ? "up-to-date" : "pushed", ref: current.ref, snapshot: current.oid };
+        return { state: flag === "=" ? "up-to-date" : "pushed", ref: current.ref, snapshot: current.oid, notScanned: scanned.notScanned };
       });
     },
 
     async verify(repo, opts = {}) {
-      const ctx = await context(repo);
+      const admitted = await admit(repo);
+      if ("block" in admitted) return { verified: false, state: "blocked", reason: admitted.block.reason, message: admitted.block.message };
+      const { ctx } = admitted;
       return exclusive(ctx, async (): Promise<VerifyResult> => {
+        const state = await enablementState(ctx, opts.signal);
+        if ("block" in state) return { verified: false, state: "blocked", reason: state.block.reason, message: state.block.message };
+        const target = state.enabled.record.remote;
         const record = await loadRecord(ctx.folder);
         const pushed = record.lastPushed;
         if (!pushed) return { verified: false, state: "not-pushed" };
         let out;
         try {
-          out = await ctx.git.ok(["ls-remote", "--refs", remote, pushed.ref], network(ctx, opts.signal));
+          out = await ctx.git.ok(["ls-remote", "--refs", target, pushed.ref], network(ctx, opts.signal));
         } catch (error) {
           const message = (error as Error).message;
           await recordError(ctx, "verify-failed", message);
@@ -451,15 +730,25 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
     async noteEdit(repo, time) {
       const ms = time instanceof Date ? time.getTime() : time;
       if (!Number.isFinite(ms)) throw new Error("edit time must be a Date or finite milliseconds");
-      const ctx = await context(repo);
+      const ctx = await context(await realRoot(repo));
       await exclusive(ctx, () => persist(ctx, (r) => noteEditInRecord(r, ms)));
     },
 
     async status(repo, opts = {}) {
-      const ctx = await context(repo);
+      const real = await realRoot(repo);
+      const where = await locationBlock(real);
+      const ctx = await context(real);
       return exclusive(ctx, async (): Promise<BackupStatus> => {
         const record = await loadRecord(ctx.folder);
         const current = await latest(ctx, opts.signal);
+        const state = await enablementState(ctx, opts.signal);
+        // Live guards first, then the cached visibility answer (no network here), then the last held-back push.
+        let held: BackupBlock | null = where ?? ("block" in state ? state.block : null);
+        if (!held && "enabled" in state) {
+          const cached = visibility.get(ctx.folder.dir);
+          if (cached && cached.digest === state.enabled.record.pushUrlDigest) held = visibilityBlock(cached.value, state.enabled.record.visibilityConfirmedPublic);
+        }
+        held ??= record.lastBlock ?? null;
         return {
           machineId,
           checkoutId: ctx.checkoutId,
@@ -475,6 +764,9 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
           lastError: record.lastError,
           recoveredFromDamagedRecord: record.recoveredFromDamagedRecord === true,
           repositoryHooksNotRun: await hooksNotRun(ctx),
+          enabled: "enabled" in state,
+          remote: "enabled" in state ? state.enabled.record.remote : null,
+          block: held,
         };
       });
     },

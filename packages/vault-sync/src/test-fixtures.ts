@@ -3,6 +3,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { devNull, tmpdir } from "node:os";
 import { join } from "node:path";
+import type { BackupEngine, BackupEngineOptions } from "./engine.ts";
 import { scrubbedEnv } from "./git-process.ts";
 
 export const isolatedGitEnv: Record<string, string> = { GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: "1" };
@@ -53,3 +54,27 @@ export function sandbox(): Sandbox {
 }
 
 export const tick = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** Guard options for tests that are not about the guards: private remote, clean scan, no cloud or network paths. */
+export const permissiveGuards: Partial<BackupEngineOptions> = {
+  homeDir: "/nonexistent-test-home",
+  mountInfo: async () => null,
+  remoteVisibility: async () => "private",
+  secretScanner: async () => ({ findings: [] }),
+};
+
+/** Wraps an engine so each checkout is enabled once before its first capture, push or verify. */
+export function autoEnabled(engine: BackupEngine): BackupEngine {
+  const enabled = new Set<string>();
+  const ensure = async (repo: string) => {
+    if (enabled.has(repo)) return;
+    await engine.enable(repo);
+    enabled.add(repo);
+  };
+  return {
+    ...engine,
+    capture: async (repo, scope, options) => { await ensure(repo); return engine.capture(repo, scope, options); },
+    pushBackup: async (repo, options) => { await ensure(repo); return engine.pushBackup(repo, options); },
+    verify: async (repo, options) => { await ensure(repo); return engine.verify(repo, options); },
+  };
+}

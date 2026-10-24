@@ -17,6 +17,7 @@ export interface EngineFolder {
   recordFile: string;
   checkoutFile: string;
   lockFile: string;
+  enablementFile: string;
 }
 
 export function engineFolder(gitDir: string): EngineFolder {
@@ -28,6 +29,7 @@ export function engineFolder(gitDir: string): EngineFolder {
     recordFile: join(dir, "deadline.json"),
     checkoutFile: join(dir, "checkout.json"),
     lockFile: join(dir, "operation.lock"),
+    enablementFile: join(dir, "enablement.json"),
   };
 }
 

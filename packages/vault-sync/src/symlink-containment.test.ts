@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { createBackupEngine } from "./index.ts";
 import { compileScope, listScope } from "./scope.ts";
 import { readStable } from "./stable-read.ts";
-import { git, isolatedGitEnv, sandbox, type Sandbox } from "./test-fixtures.ts";
+import { autoEnabled, git, isolatedGitEnv, permissiveGuards, sandbox, type Sandbox } from "./test-fixtures.ts";
 
 const SECRET = "outside bytes that must never be captured\n";
 const cleanups: (() => void)[] = [];
@@ -50,7 +50,7 @@ function tree(repo: string, commit: string): Map<string, { mode: string; content
   return out;
 }
 
-const engine = () => createBackupEngine({ machineId: "test-machine", settleMs: 0, gitEnv: isolatedGitEnv });
+const engine = () => autoEnabled(createBackupEngine({ machineId: "test-machine", settleMs: 0, gitEnv: isolatedGitEnv, ...permissiveGuards }));
 
 function expectNoOutsideBytes(entries: Map<string, { mode: string; content: string }>): void {
   for (const [, entry] of entries) expect(entry.content).not.toBe(SECRET);

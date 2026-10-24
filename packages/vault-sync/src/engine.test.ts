@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createBackupEngine, type BackupEngineOptions } from "./index.ts";
-import { git, gitAsync, gitText, isolatedGitEnv, sandbox, tick, type Sandbox } from "./test-fixtures.ts";
+import { autoEnabled, git, gitAsync, gitText, isolatedGitEnv, permissiveGuards, sandbox, tick, type Sandbox } from "./test-fixtures.ts";
 
 const ENGINE_EMAIL = "backup@vault-sync.invalid";
 const sandboxes: Sandbox[] = [];
@@ -17,7 +17,7 @@ function setup(): Sandbox {
 }
 
 function engine(overrides: Partial<BackupEngineOptions> = {}) {
-  return createBackupEngine({ machineId: "test-machine", settleMs: 5, gitEnv: isolatedGitEnv, ...overrides });
+  return autoEnabled(createBackupEngine({ machineId: "test-machine", settleMs: 5, gitEnv: isolatedGitEnv, ...permissiveGuards, ...overrides }));
 }
 
 function put(root: string, path: string, content: string | Buffer): void {
@@ -226,7 +226,8 @@ describe("deadline record", () => {
     expect(status.oldestUnprotectedEdit).toBe(clock - 30_000);
     expect(status.protectionAgeSeconds).toBe(30);
 
-    git(repo, ["remote", "remove", "origin"]);
+    // The remote becomes unreachable without its configured address changing (which would void enablement).
+    renameSync(remote, `${remote}.away`);
     clock += 10_000;
     const captured = await second.capture(repo, { include: ["notes"] });
     expect(captured.committed).toBe(true);
@@ -242,7 +243,7 @@ describe("deadline record", () => {
     const third = engine({ now });
     expect((await third.status(repo)).oldestUnprotectedEdit).toBe(Date.UTC(2026, 0, 10, 11, 59, 30));
 
-    git(repo, ["remote", "add", "origin", remote]);
+    renameSync(`${remote}.away`, remote);
     clock += 60_000;
     const pushed = await third.pushBackup(repo);
     expect(pushed.state).toBe("pushed");

@@ -34,6 +34,8 @@ export interface GitRunOptions {
   timeoutMs: number;
   maxOutputBytes: number;
   signal?: AbortSignal;
+  /** Keep only the first N bytes of stdout, then stop the process and resolve with them (code 0). */
+  stopAfterBytes?: number;
 }
 
 export interface GitResult {
@@ -113,6 +115,7 @@ export function createGitRunner(config: GitRunnerConfig): GitRunner {
       let stderr = "";
       let failure: GitProcessError | null = null;
       let settled = false;
+      let stopped = false;
 
       const kill = () => {
         try {
@@ -132,6 +135,15 @@ export function createGitRunner(config: GitRunnerConfig): GitRunner {
       options.signal?.addEventListener("abort", onAbort, { once: true });
 
       child.stdout!.on("data", (chunk: Buffer) => {
+        if (stopped) return;
+        const stopAt = options.stopAfterBytes;
+        if (stopAt !== undefined && size + chunk.length >= stopAt) {
+          chunks.push(chunk.subarray(0, stopAt - size));
+          size = stopAt;
+          stopped = true;
+          kill();
+          return;
+        }
         size += chunk.length;
         if (size > options.maxOutputBytes) {
           fail(new GitProcessError("output-limit", `git ${args[0] ?? ""} produced more than ${options.maxOutputBytes} bytes`));
@@ -155,7 +167,7 @@ export function createGitRunner(config: GitRunnerConfig): GitRunner {
           reject(failure);
           return;
         }
-        resolve({ code: code ?? -1, stdout: Buffer.concat(chunks), stderr: redact(stderr) });
+        resolve({ code: stopped ? 0 : code ?? -1, stdout: Buffer.concat(chunks), stderr: redact(stderr) });
       });
       if (options.input) child.stdin!.end(Buffer.from(options.input));
       else child.stdin!.end();

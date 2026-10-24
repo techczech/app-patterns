@@ -5,6 +5,7 @@
  * Times are milliseconds since the epoch. A snapshot "covers" every edit observed at or before the
  * moment its capture started, except files that capture had to leave pending.
  */
+import type { BackupBlock } from "./blocks.ts";
 
 export interface SnapshotCoverage {
   snapshot: string;
@@ -35,6 +36,8 @@ export interface DeadlineRecord {
   lastError: BackupErrorRecord | null;
   /** Set when an unreadable record was replaced; the age then counts from that file's last write. */
   recoveredFromDamagedRecord?: boolean;
+  /** Why the last push was held back (visibility, secret scan); cleared by the next successful push. */
+  lastBlock?: BackupBlock | null;
 }
 
 export function emptyRecord(): DeadlineRecord {
@@ -93,7 +96,7 @@ export function applyPushed(record: DeadlineRecord, snapshot: string, ref: strin
   const pushed: SnapshotCoverage = capture && capture.snapshot === snapshot
     ? { ...capture, ref }
     : { snapshot, ref, coverage: null, pendingFloor: null };
-  return { ...record, lastPushed: pushed, lastError: null };
+  return { ...record, lastPushed: pushed, lastError: null, lastBlock: null };
 }
 
 /** Applied only after ls-remote showed the remote ref at exactly the pushed object id. */
@@ -110,6 +113,11 @@ export function applyVerified(record: DeadlineRecord, verified: SnapshotCoverage
   oldest = min(oldest, verified.pendingFloor);
   const through = verified.pendingFloor === null ? c : Math.min(c, verified.pendingFloor);
   return { ...base, oldestUnprotectedEdit: oldest, protectedThrough: through, recoveredFromDamagedRecord: oldest === null ? undefined : record.recoveredFromDamagedRecord };
+}
+
+/** A held-back push: records why, and leaves every deadline field as it was. */
+export function withBlock(record: DeadlineRecord, block: BackupBlock): DeadlineRecord {
+  return { ...record, lastBlock: block };
 }
 
 export function withError(record: DeadlineRecord, error: BackupErrorRecord): DeadlineRecord {
