@@ -7,3 +7,4 @@ export type { EnableOptions, EnableResult, RemoteVisibility } from "./engine.ts"
 export { BackupRefusedError, type BackupBlock, type BlockReason } from "./blocks.ts";
 export { isCloudSyncedLocation, isNetworkMount, parseMountTable, mountFor, defaultMountInfo, NETWORK_FILESYSTEM_TYPES, type CloudLocation, type CloudLocationKind, type LocationEnvironment, type MountEntry, type MountInfoReader } from "./location.ts";
 export { createGitleaksScanner, type GitleaksOptions, type NotScannedBlob, type ScanBlob, type SecretFinding, type SecretScanResult, type SecretScanner } from "./secret-scan.ts";
+export { RestoreRefusedError, type BackupEntry, type ListSnapshotsOptions, type RestoreApi, type RestoreOptions, type RestoreRefusal, type RestoreResult, type SnapshotInfo } from "./restore.ts";

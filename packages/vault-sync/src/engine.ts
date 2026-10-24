@@ -25,6 +25,7 @@ import { collectPushBlobs, createGitleaksScanner, describeFindings, type NotScan
 import { applyCapture, applyPushed, applyVerified, noteEdit as noteEditInRecord, protectionAgeSeconds, withBlock, withError, type BackupErrorRecord, type DeadlineRecord, type SnapshotCoverage } from "./deadline.ts";
 import { checkoutId as readCheckoutId, engineFolder, ensureEngineFolder, loadRecord, saveRecord, withFolderLock, type EngineFolder } from "./engine-store.ts";
 import { createGitRunner, GitProcessError, splitNul, type GitRunner } from "./git-process.ts";
+import { createRestoreApi, type RestoreApi } from "./restore.ts";
 import { compileScope, listScope, type BackupScope, type SkippedPath } from "./scope.ts";
 import { checkContainment, readStable, statKey, type GitFileMode } from "./stable-read.ts";
 
@@ -150,7 +151,7 @@ export interface BackupStatus {
   block: BackupBlock | null;
 }
 
-export interface BackupEngine {
+export interface BackupEngine extends RestoreApi {
   /** Turns backup on for this checkout. Refuses cloud-synced folders and unconfirmed public remotes. */
   enable(repo: string, options?: EnableOptions): Promise<EnableResult>;
   /** Turns backup off for this checkout. */
@@ -600,7 +601,26 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
     }
   }
 
+  const restoreApi = createRestoreApi({
+    remote,
+    now,
+    authorEmail: author.email,
+    maxFileBytes,
+    localTimeoutMs,
+    networkTimeoutMs,
+    maxOutputBytes,
+    // Restore needs a worktree root but not an enablement record, and it writes no engine state.
+    realRoot: async (repo) => {
+      const real = await realRoot(repo);
+      await locate(real);
+      return real;
+    },
+    locationBlock,
+    runner: () => createGitRunner({ gitPath: options.gitPath, hooksDir: devNull, env: options.gitEnv }),
+  });
+
   return {
+    ...restoreApi,
     async enable(repo, opts = {}) {
       const real = await realRoot(repo);
       const where = await locationBlock(real);
