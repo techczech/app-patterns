@@ -13,6 +13,7 @@
 import { createHash } from "node:crypto";
 import { lstat, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { setTimeout as wait } from "node:timers/promises";
 import { backupRef, latestDayRef } from "./backup-ref.ts";
 import { BackupRefusedError } from "./blocks.ts";
 import { chainProblem, recordRoot } from "./chain.ts";
@@ -43,6 +44,7 @@ export interface CaptureResult {
   committed: boolean;
   snapshot: string | null;
   ref: string | null;
+  /** Start of the complete pass returned, which may follow an earlier safe partial snapshot. */
   startedAt: number;
   added: string[];
   modified: string[];
@@ -106,11 +108,48 @@ function blobOid(ctx: RepoContext, content: Buffer): string {
   return createHash(ctx.objectFormat).update(`blob ${content.length}\0`).update(content).digest("hex");
 }
 
+const CAPTURE_ATTEMPTS = 3;
+const CAPTURE_RETRY_WAIT_MS = 100;
+const CAPTURE_RETRY_BUDGET_MS = 2000;
+class CaptureReadBudgetExpired extends Error {}
+
 /**
- * Takes one snapshot of the scoped files with the checkout's private index. The caller holds the
+ * One conservative pass, also used directly by generation-ordering tests. The caller holds the
  * operation lock. HEAD, the user's index and the worktree are never written; only the backup ref moves.
  */
 export async function captureSnapshot(ctx: RepoContext, scope: BackupScope, deps: CaptureDeps, signal?: AbortSignal): Promise<CaptureResult> {
+  return capturePass(ctx, scope, deps, signal);
+}
+
+/** Fresh complete passes under the caller's operation lock; never combine coverage across passes. */
+export async function captureWithRetry(ctx: RepoContext, scope: BackupScope, deps: CaptureDeps, signal?: AbortSignal): Promise<CaptureResult> {
+  const deadline = performance.now() + CAPTURE_RETRY_BUDGET_MS;
+  let result = await capturePass(ctx, scope, deps, signal);
+  for (let attempt = 1; attempt < CAPTURE_ATTEMPTS; attempt++) {
+    if (!result.pending.some(({ reason }) => reason === "writing" || reason === "unstable")) break;
+    signal?.throwIfAborted();
+    const remaining = deadline - performance.now();
+    if (remaining <= CAPTURE_RETRY_WAIT_MS) break;
+    await wait(CAPTURE_RETRY_WAIT_MS, undefined, { signal });
+    signal?.throwIfAborted();
+    if (performance.now() >= deadline) break;
+    try {
+      result = await capturePass(ctx, scope, deps, signal, deadline);
+    } catch (error) {
+      signal?.throwIfAborted();
+      if (!(error instanceof CaptureReadBudgetExpired)) throw error;
+      break;
+    }
+  }
+  return result;
+}
+
+async function capturePass(ctx: RepoContext, scope: BackupScope, deps: CaptureDeps, signal?: AbortSignal, readDeadline = Infinity): Promise<CaptureResult> {
+  const checkReadBudget = () => {
+    signal?.throwIfAborted();
+    if (performance.now() >= readDeadline) throw new CaptureReadBudgetExpired();
+  };
+  checkReadBudget();
   const { machineId, now, settleMs, retries, maxFileBytes, author, readRecord, persist } = deps;
   const local = (c: RepoContext, sig?: AbortSignal, env?: Record<string, string>) => deps.run(c, sig, env);
   const compiled = compileScope(scope);
@@ -126,10 +165,12 @@ export async function captureSnapshot(ctx: RepoContext, scope: BackupScope, deps
   }
   // The record before any file is read: its generation orders this capture after every report already in
   // it, and its write marks are compared with the record after the reads.
+  checkReadBudget();
   const before = await readRecord(ctx);
   const writesBefore = before.writes;
 
   const { files, skipped, unreadable, listed: listedFolders } = await listScope(ctx.root, compiled);
+  checkReadBudget();
   const listed = new Set(files);
   const result: CaptureResult = { committed: false, snapshot: previous?.oid ?? null, ref: previous?.ref ?? null, startedAt, added: [], modified: [], removed: [], pending: [], skipped: [...skipped] };
   const read = new Map<string, { oid: string; mode: GitFileMode; content: Buffer | null }>();
@@ -142,7 +183,7 @@ export async function captureSnapshot(ctx: RepoContext, scope: BackupScope, deps
   };
 
   for (const path of files) {
-    signal?.throwIfAborted();
+    checkReadBudget();
     const abs = join(ctx.root, ...path.split("/"));
     const before = prevEntries.get(path);
     if (writesBefore[path]?.active) {
@@ -177,7 +218,14 @@ export async function captureSnapshot(ctx: RepoContext, scope: BackupScope, deps
     }
     let content: Buffer | null = null;
     if (!entry) {
-      const stable = await readStable(abs, { settleMs, retries, maxFileBytes, root: ctx.root });
+      const stable = await readStable(abs, { settleMs, retries, maxFileBytes, root: ctx.root,
+        sleep: async (ms) => {
+          checkReadBudget();
+          await wait(Math.max(0, Math.min(ms, readDeadline - performance.now())), undefined, { signal });
+          checkReadBudget();
+        },
+      });
+      checkReadBudget();
       if (!stable.ok) {
         if (stable.reason === "missing" || stable.reason === "beyond-symlink") {
           listed.delete(path);
@@ -200,6 +248,7 @@ export async function captureSnapshot(ctx: RepoContext, scope: BackupScope, deps
   const absentCandidates = new Set([...prevEntries.keys(), ...before.flushed.flatMap((f) => f.path === null ? [] : [f.path])]);
   const removals = new Set<string>();
   for (const path of absentCandidates) {
+    checkReadBudget();
     if (listed.has(path)) continue;
     // Persisted records are not path authority. Never probe outside the root or an excluded ancestor.
     const parts = path.split("/");
@@ -272,12 +321,16 @@ export async function captureSnapshot(ctx: RepoContext, scope: BackupScope, deps
   // An include path that was a file is "listed" when the walk found it.
   const listedNow = new Set([...listedFolders, ...files]);
   for (const folder of Object.keys(record.unlistedSince)) {
+    checkReadBudget();
     if (unlisted.has(folder)) continue;
     if (listedNow.has(folder)) relisted.push(folder);
     else if ((await confirmGone(ctx.root, folder)) !== "gone") unlisted.add(folder);
   }
   for (const folder of [...unlisted].sort()) result.pending.push({ path: folder === "" ? "." : folder, reason: "unlisted" });
 
+  // No retry may start writing objects/refs after its read budget expires. Once admitted here,
+  // finish the existing commit/record transaction without a budget abort between those writes.
+  checkReadBudget();
   const sawChange = updates.length > 0;
   let tree: string | null = null;
   let prevTree: string | null = null;

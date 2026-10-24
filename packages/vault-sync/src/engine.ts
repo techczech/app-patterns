@@ -37,7 +37,7 @@ import { access, readdir, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { backupPrefix, validateId } from "./backup-ref.ts";
 import { BackupRefusedError, type BackupBlock, type BlockReason } from "./blocks.ts";
-import { captureSnapshot, latestSnapshot, type CaptureDeps, type CaptureResult, type RepoContext } from "./capture.ts";
+import { captureWithRetry, latestSnapshot, type CaptureDeps, type CaptureResult, type RepoContext } from "./capture.ts";
 import { chainProblem } from "./chain.ts";
 import { checkDestination, type Destination } from "./destination.ts";
 import { readEnablement, removeEnablement, urlDigest, writeEnablement, type EnablementRecord } from "./enablement.ts";
@@ -566,7 +566,7 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
         const state = await enablementState(ctx, opts.signal);
         if ("block" in state) throw new BackupRefusedError(state.block);
         try {
-          return await captureSnapshot(ctx, scope, captureDeps, opts.signal);
+          return await captureWithRetry(ctx, scope, captureDeps, opts.signal);
         } catch (error) {
           if (error instanceof BackupRefusedError) await persist(ctx, (r) => withBlock(r, error.block)).catch(() => undefined);
           else await recordError(ctx, "capture-failed", (error as Error).message).catch(() => undefined);
