@@ -17,8 +17,8 @@ import { backupPrefix, backupRef, latestDayRef, validateId } from "./backup-ref.
 import { applyCapture, applyPushed, applyVerified, noteEdit as noteEditInRecord, protectionAgeSeconds, withError, type BackupErrorRecord, type DeadlineRecord, type SnapshotCoverage } from "./deadline.ts";
 import { checkoutId as readCheckoutId, engineFolder, ensureEngineFolder, loadRecord, saveRecord, withFolderLock, type EngineFolder } from "./engine-store.ts";
 import { createGitRunner, GitProcessError, splitNul, type GitRunner } from "./git-process.ts";
-import { compileScope, listScopedFiles, type BackupScope } from "./scope.ts";
-import { readStable, statKey, type GitFileMode } from "./stable-read.ts";
+import { compileScope, listScope, type BackupScope, type SkippedPath } from "./scope.ts";
+import { checkContainment, readStable, statKey, type GitFileMode } from "./stable-read.ts";
 
 export interface BackupEngineOptions {
   /** Stable id of this machine, used in backup branch names. */
@@ -53,6 +53,12 @@ export interface PendingFile {
   reason: "unstable" | "too-large" | "unreadable";
 }
 
+/**
+ * A scoped path (or include base) that lies beyond a symlinked directory. It is never read; if it was in
+ * the previous snapshot it is removed from the next one rather than kept with bytes from outside.
+ */
+export type SkippedFile = SkippedPath;
+
 export interface CaptureResult {
   committed: boolean;
   snapshot: string | null;
@@ -62,6 +68,8 @@ export interface CaptureResult {
   modified: string[];
   removed: string[];
   pending: PendingFile[];
+  /** Paths not captured because they lie beyond a symlinked directory. */
+  skipped: SkippedFile[];
 }
 
 export type PushResult =
@@ -226,9 +234,9 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
     const ref = previous && previous.ref > todayRef ? previous.ref : todayRef;
     const prevEntries = previous ? await treeEntries(ctx, previous.oid, signal) : new Map<string, TreeEntry>();
 
-    const files = await listScopedFiles(ctx.root, compiled);
+    const { files, skipped } = await listScope(ctx.root, compiled);
     const listed = new Set(files);
-    const result: CaptureResult = { committed: false, snapshot: previous?.oid ?? null, ref: previous?.ref ?? null, startedAt, added: [], modified: [], removed: [], pending: [] };
+    const result: CaptureResult = { committed: false, snapshot: previous?.oid ?? null, ref: previous?.ref ?? null, startedAt, added: [], modified: [], removed: [], pending: [], skipped: [...skipped] };
     const updates: string[] = [];
     const writes: { oid: string; content: Buffer }[] = [];
     const readPaths: string[] = [];
@@ -241,6 +249,15 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
       const before = prevEntries.get(path);
       const cached = ctx.cache.get(path);
       let entry: { oid: string; mode: GitFileMode } | null = null;
+      // Checked before the cache too: a cached stat key must not vouch for a path now reached through a link.
+      const contained = await checkContainment(ctx.root, abs);
+      if (contained !== "ok") {
+        ctx.cache.delete(path);
+        listed.delete(path);
+        cleared.push(path);
+        if (contained === "beyond-symlink") result.skipped.push({ path, reason: "beyond-symlink" });
+        continue;
+      }
       // The cache only short-cuts files already in the previous snapshot, so their blob is known to exist.
       if (cached && before && before.oid === cached.oid) {
         try {
@@ -250,11 +267,12 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
         if (!entry) ctx.cache.delete(path);
       }
       if (!entry) {
-        const read = await readStable(abs, { settleMs, retries, maxFileBytes });
+        const read = await readStable(abs, { settleMs, retries, maxFileBytes, root: ctx.root });
         if (!read.ok) {
-          if (read.reason === "missing") {
+          if (read.reason === "missing" || read.reason === "beyond-symlink") {
             listed.delete(path);
             cleared.push(path);
+            if (read.reason === "beyond-symlink") result.skipped.push({ path, reason: "beyond-symlink" });
             continue;
           }
           result.pending.push({ path, reason: read.reason });

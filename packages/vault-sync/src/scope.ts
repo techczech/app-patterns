@@ -5,8 +5,12 @@
  * Pattern rules: a pattern without glob characters names a file or a directory (and everything
  * under it). `*` and `?` match within one path segment, `[...]` is a character class, and a `**`
  * segment matches any number of segments. `.git` entries and nested repositories are never listed.
+ *
+ * Symlinks: a symlink is listed as a leaf (stored as a link, never followed). The walk never descends
+ * through a symlinked directory, and a literal base whose path passes through a symlinked directory is
+ * skipped with reason "beyond-symlink" (Git refuses such paths for the same reason).
  */
-import { lstat, readdir } from "node:fs/promises";
+import { lstat, readdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
 
 export interface BackupScope {
@@ -112,17 +116,49 @@ function isGitPath(path: string): boolean {
   return path.split("/").includes(".git");
 }
 
+export interface SkippedPath {
+  path: string;
+  reason: "beyond-symlink";
+}
+
+export interface ScopeListing {
+  /** Scoped regular files and symlinks, as sorted worktree-relative POSIX paths. */
+  files: string[];
+  /** Include bases (or walked directories) that were not traversed because they lie beyond a symlink. */
+  skipped: SkippedPath[];
+}
+
 /** Lists scoped regular files and symlinks under root, as sorted worktree-relative POSIX paths. */
 export async function listScopedFiles(root: string, scope: CompiledScope): Promise<string[]> {
+  return (await listScope(root, scope)).files;
+}
+
+/** Lists scoped files and reports include bases that were skipped because they lie beyond a symlink. */
+export async function listScope(root: string, scope: CompiledScope): Promise<ScopeListing> {
   const found = new Set<string>();
   const visited = new Set<string>();
+  const skipped = new Map<string, SkippedPath>();
+  const realRoot = await realpath(root);
+  const skip = (path: string) => {
+    if (!skipped.has(path)) skipped.set(path, { path, reason: "beyond-symlink" });
+  };
 
   const walkDir = async (rel: string): Promise<void> => {
     if (visited.has(rel)) return;
     visited.add(rel);
+    const dir = rel ? join(root, ...rel.split("/")) : root;
+    // A directory swapped for a symlink after its parent was read must not be followed.
+    try {
+      if ((await realpath(dir)) !== (rel ? join(realRoot, ...rel.split("/")) : realRoot)) {
+        skip(rel);
+        return;
+      }
+    } catch {
+      return;
+    }
     let entries;
     try {
-      entries = await readdir(rel ? join(root, rel) : root, { withFileTypes: true });
+      entries = await readdir(dir, { withFileTypes: true });
     } catch {
       return;
     }
@@ -131,6 +167,7 @@ export async function listScopedFiles(root: string, scope: CompiledScope): Promi
       if (name === ".git") continue;
       const child = rel ? `${rel}/${name}` : name;
       if (scope.isExcluded(child)) continue;
+      // Dirent types come from lstat semantics: a symlinked directory is a symlink, never descended.
       if (entry.isDirectory()) {
         if (await isNestedRepo(join(root, child))) continue;
         await walkDir(child);
@@ -146,19 +183,33 @@ export async function listScopedFiles(root: string, scope: CompiledScope): Promi
       await walkDir("");
       continue;
     }
-    // Every ancestor of the base must be walkable: not excluded and not a nested repository.
+    // Every ancestor of the base must be walkable: not excluded, not a nested repository, and a real
+    // directory (lstat each prefix; lstat follows symlinks in intermediate components).
     const parts = base.split("/");
     let blocked = false;
     for (let i = 1; i <= parts.length; i += 1) {
       const prefix = parts.slice(0, i).join("/");
       if (scope.isExcluded(prefix)) blocked = true;
-      else if (i < parts.length && await isNestedRepo(join(root, prefix))) blocked = true;
+      else if (i < parts.length) {
+        let info;
+        try {
+          info = await lstat(join(root, ...parts.slice(0, i)));
+        } catch {
+          blocked = true;
+          break;
+        }
+        if (info.isSymbolicLink()) {
+          skip(base);
+          blocked = true;
+        } else if (!info.isDirectory()) blocked = true;
+        else if (await isNestedRepo(join(root, prefix))) blocked = true;
+      }
       if (blocked) break;
     }
     if (blocked) continue;
     let info;
     try {
-      info = await lstat(join(root, base));
+      info = await lstat(join(root, ...parts));
     } catch {
       continue;
     }
@@ -168,7 +219,7 @@ export async function listScopedFiles(root: string, scope: CompiledScope): Promi
       found.add(base);
     }
   }
-  return [...found].sort();
+  return { files: [...found].sort(), skipped: [...skipped.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)) };
 }
 
 async function isNestedRepo(dir: string): Promise<boolean> {
