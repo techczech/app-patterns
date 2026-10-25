@@ -26,8 +26,18 @@
  * tell that a write began or finished while it was reading.
  *
  * Times are milliseconds since the epoch.
+ *
+ * Editor receipts (receipt-ledger.ts) keep their own debt in the optional `receipts` ledger: unflushed
+ * segments per document identity and debt bound to an exact saved blob. That debt counts in every age
+ * below; a capture clears blob-bound debt only when it read exactly that blob. Untagged reports keep the
+ * arithmetic above unchanged. A save acknowledgement through the untagged API never ends a tagged mark.
  */
 import type { BackupBlock } from "./blocks.ts";
+import {
+  MAX_VERIFIED, cloneLedger, damagedGuardsComplete, finiteTimesIn, freeEmptyDocs, freshLedger, isTaggedOwner, ledgerKind, ledgerOf, ledgerOldest, newReceiptId, nextCounters, parseLedger, receiptPath, sameDoc,
+  type OpaqueLedger, type ReceiptLedger, type TaggedWriteOwner,
+} from "./receipt-ledger.ts";
+import { own, pathMap } from "./path-map.ts";
 
 export type EditTicket = number;
 /** Generation returned by a coordinated write start; valid only in its checkout. */
@@ -70,6 +80,8 @@ export interface WriteMark {
   active: boolean;
   /** Time the write started (age only). */
   since: number;
+  /** Set on an active write started through an editor receipt (or kept, owner unknown, through a reset). */
+  owner?: TaggedWriteOwner;
 }
 
 export interface BackupErrorRecord {
@@ -107,6 +119,8 @@ export interface DeadlineRecord {
   convertedFrom?: number | "damaged";
   /** Why the last push was held back (visibility, secret scan, remote set-up); cleared by the next successful push. */
   lastBlock?: BackupBlock | null;
+  /** Editor receipt ledger (receipt-ledger.ts); a ledger of another version is kept opaque. */
+  receipts?: ReceiptLedger | OpaqueLedger;
 }
 
 const MAX_UNFLUSHED = 1024;
@@ -122,9 +136,9 @@ export function emptyRecord(): DeadlineRecord {
     unflushed: [],
     flushed: [],
     captured: [],
-    writes: {},
-    pendingSince: {},
-    unlistedSince: {},
+    writes: pathMap(),
+    pendingSince: pathMap(),
+    unlistedSince: pathMap(),
     snapshotSeq: 0,
     lastVerifiedSnapshot: null,
     lastVerifiedAt: null,
@@ -146,10 +160,10 @@ function oldestUncaptured(record: DeadlineRecord): number | null {
   for (const t of Object.values(record.pendingSince)) oldest = min(oldest, t);
   for (const t of Object.values(record.unlistedSince)) oldest = min(oldest, t);
   for (const w of Object.values(record.writes)) if (w.active) oldest = min(oldest, w.since);
-  return oldest;
+  return min(oldest, ledgerOldest(record.receipts));
 }
 
-function withOldest(record: DeadlineRecord): DeadlineRecord {
+export function withOldest(record: DeadlineRecord): DeadlineRecord {
   let oldest = oldestUncaptured(record);
   for (const c of record.captured) oldest = min(oldest, c.from);
   return { ...record, oldestUnprotectedEdit: oldest, recoveredFromDamagedRecord: oldest === null ? undefined : record.recoveredFromDamagedRecord };
@@ -193,8 +207,8 @@ export function noteEdit(record: DeadlineRecord, time: number, path: string | nu
 export function noteWriteStart(record: DeadlineRecord, paths: readonly string[], at: number): DeadlineRecord {
   finite(at, "write start");
   const gen = record.generation + 1;
-  if (paths.some((path) => record.writes[path]?.active)) throw new Error("a coordinated write is already active on a named path");
-  const writes = { ...record.writes };
+  if (paths.some((path) => own(record.writes, path)?.active)) throw new Error("a coordinated write is already active on a named path");
+  const writes = pathMap(record.writes);
   for (const path of paths) writes[path] = { gen, active: true, since: at };
   return withOldest({ ...record, generation: gen, writes });
 }
@@ -256,11 +270,12 @@ export function noteFlush(record: DeadlineRecord, ack: FlushAcknowledgement, at:
     // time stays their conservative floor.
     if (u.last > ack.upTo) unflushed.push({ ...u, first: ack.upTo + 1 });
   }
-  const writes = { ...record.writes };
+  const writes = pathMap(record.writes);
   for (const [path, mark] of Object.entries(writes)) {
     // Edit tickets describe saved edits, not write intervals. A delayed/replayed save can only end
     // the interval it actually completed, even when it names all documents or the clock moves back.
-    if (!mark.active || !covers(path) || !ack.completedWrites?.some((receipt) => receipt.path === path && receipt.token === mark.gen)) continue;
+    // A tagged mark ends only through its own receipt (receipt-transitions.ts), never here.
+    if (!mark.active || mark.owner || !covers(path) || !ack.completedWrites?.some((receipt) => receipt.path === path && receipt.token === mark.gen)) continue;
     // The write's own bytes still need a capture, from the time it started.
     writes[path] = { gen: ackGen, active: false, since: mark.since };
     flushed = addFlushed(flushed, { path, from: mark.since, ackGen });
@@ -292,28 +307,30 @@ export interface CaptureOutcome {
   unlistedFolders: readonly string[];
   /** Folders that were unlisted before and were listed by this capture. */
   relistedFolders: readonly string[];
+  /** Blob id of every path in `readPaths`, from the final read map (after the post-read generation check). */
+  readOids?: Readonly<Record<string, string>>;
 }
 
 function settlePending(record: DeadlineRecord, outcome: Omit<CaptureOutcome, "snapshot" | "ref">, add: (from: number) => void) {
-  const pendingSince = { ...record.pendingSince };
+  const pendingSince = pathMap(record.pendingSince);
   const pendingSet = new Set(outcome.pendingPaths);
   for (const path of [...outcome.readPaths, ...outcome.goneConfirmed]) {
-    const since = pendingSince[path];
+    const since = own(pendingSince, path);
     if (since !== undefined && !pendingSet.has(path)) {
       add(since);
       delete pendingSince[path];
     }
   }
   for (const path of outcome.clearedPaths) delete pendingSince[path];
-  for (const path of outcome.pendingPaths) pendingSince[path] ??= outcome.pendingFloor;
-  const unlistedSince: Record<string, number> = {};
-  for (const folder of outcome.unlistedFolders) unlistedSince[folder] = record.unlistedSince[folder] ?? outcome.pendingFloor;
+  for (const path of outcome.pendingPaths) if (own(pendingSince, path) === undefined) pendingSince[path] = outcome.pendingFloor;
+  const unlistedSince = pathMap<number>();
+  for (const folder of outcome.unlistedFolders) unlistedSince[folder] = own(record.unlistedSince, folder) ?? outcome.pendingFloor;
   for (const folder of outcome.relistedFolders) {
-    const since = record.unlistedSince[folder];
+    const since = own(record.unlistedSince, folder);
     if (since !== undefined) add(since);
   }
   // Writes that ended before this capture read the record are no longer needed for comparison.
-  const writes: Record<string, WriteMark> = {};
+  const writes = pathMap<WriteMark>();
   for (const [path, mark] of Object.entries(record.writes)) if (mark.active || mark.gen > outcome.startGen) writes[path] = mark;
   return { pendingSince, unlistedSince, writes };
 }
@@ -323,7 +340,7 @@ export function markPending(record: DeadlineRecord, outcome: Omit<CaptureOutcome
   // With no snapshot nothing is captured: earlier marks stay, new ones are added.
   const settled = settlePending(record, { ...outcome, readPaths: [], committed: false, sawChange: false }, () => undefined);
   for (const folder of outcome.relistedFolders) {
-    const since = record.unlistedSince[folder];
+    const since = own(record.unlistedSince, folder);
     if (since !== undefined) settled.unlistedSince[folder] = since;
   }
   return withOldest({ ...record, ...settled });
@@ -358,6 +375,7 @@ export function applyCapture(record: DeadlineRecord, outcome: CaptureOutcome): {
     if (covered) add(f.from);
     else flushed.push(f);
   }
+  const receipts = captureReceipts(record, outcome, seq, add);
   captured.sort((a, b) => a.seq - b.seq);
   while (captured.length > MAX_CAPTURED) {
     // Merging into the later snapshot is conservative: it resolves only when that one is verified.
@@ -371,8 +389,39 @@ export function applyCapture(record: DeadlineRecord, outcome: CaptureOutcome): {
     captured,
     snapshotSeq: Math.max(record.snapshotSeq, seq),
     lastCapture: { snapshot: outcome.snapshot, ref: outcome.ref, seq, coverage: outcome.startedAt },
+    ...(receipts ? { receipts } : {}),
   });
   return { record: next, coverageThrough: min(outcome.startedAt, oldestUncaptured(next))! };
+}
+
+/**
+ * Blob-bound receipt debt a capture proves: acknowledged before the capture read the record, read stably
+ * and not pending, and read as exactly the acknowledged blob. Its age moves into this snapshot's captured
+ * entry and its proof row records this exact snapshot. A different blob leaves the debt and marks the
+ * proof as a mismatch; an unread, pending or deleted path changes nothing.
+ */
+function captureReceipts(record: DeadlineRecord, outcome: CaptureOutcome, seq: number, add: (from: number) => void): ReceiptLedger | null {
+  const current = ledgerOf(record);
+  if (!current) return null;
+  const ledger = cloneLedger(current);
+  const read = new Set(outcome.readPaths);
+  const pending = new Set(outcome.pendingPaths);
+  for (const stream of Object.values(ledger.clients)) {
+    for (const d of stream.docs) {
+      const f = d.flushed;
+      if (!f || f.ackGen > outcome.startGen || !read.has(d.path) || pending.has(d.path)) continue;
+      const proof = stream.proof.find((p) => p.path === d.path && sameDoc(p.doc, d.doc) && p.gen === f.gen && p.blobOid === f.blobOid);
+      if (outcome.readOids && own(outcome.readOids, d.path) === f.blobOid) {
+        add(f.from);
+        d.flushed = null;
+        if (proof) Object.assign(proof, { state: "captured", snapshotSeq: seq, snapshot: outcome.snapshot });
+      } else if (proof) {
+        Object.assign(proof, { state: "mismatch", snapshotSeq: null, snapshot: null });
+      }
+    }
+    freeEmptyDocs(stream);
+  }
+  return ledger;
 }
 
 /** Coverage a capture's snapshot can claim, computed before its commit exists (the snapshot id does not affect it). */
@@ -393,8 +442,36 @@ export function applyVerified(record: DeadlineRecord, verified: SnapshotCoverage
   const base = { ...record, lastVerifiedSnapshot: verified.snapshot, lastVerifiedAt: at, lastError: null };
   if (verified.seq === null || verified.coverage === null) return base;
   const seq = verified.seq;
-  const next = withOldest({ ...base, captured: record.captured.filter((c) => c.seq > seq) });
+  const receipts = verifyReceipts(record, seq, at);
+  const next = withOldest({ ...base, captured: record.captured.filter((c) => c.seq > seq), ...(receipts ? { receipts } : {}) });
   return { ...next, protectedThrough: min(verified.coverage, next.oldestUnprotectedEdit) };
+}
+
+/**
+ * Captured proof rows at or before the verified snapshot become verified rows carrying their own exact
+ * capture snapshot, unchanged: verification of a later snapshot proves the earlier capture through the
+ * validated chain, not that the later snapshot still holds those bytes. Debt is not touched here.
+ */
+function verifyReceipts(record: DeadlineRecord, seq: number, at: number): ReceiptLedger | null {
+  const current = ledgerOf(record);
+  if (!current) return null;
+  const ledger = cloneLedger(current);
+  for (const stream of Object.values(ledger.clients)) {
+    const promote = stream.proof.filter((p) => p.state === "captured" && p.snapshot !== null && p.snapshotSeq !== null && p.snapshotSeq <= seq);
+    if (promote.length === 0) continue;
+    stream.proof = stream.proof.filter((p) => !promote.includes(p));
+    for (const p of promote) {
+      const existing = stream.verified.findIndex((v) => v.path === p.path && sameDoc(v.doc, p.doc));
+      if (existing >= 0 && stream.verified[existing]!.gen > p.gen) continue;
+      if (existing >= 0) stream.verified.splice(existing, 1);
+      stream.verified.push({ doc: { ...p.doc }, path: p.path, gen: p.gen, blobOid: p.blobOid, snapshot: p.snapshot!, snapshotSeq: p.snapshotSeq!, at });
+    }
+    while (stream.verified.length > MAX_VERIFIED) {
+      stream.verified.shift();
+      ledger.counters.proofEvicted += 1;
+    }
+  }
+  return ledger;
 }
 
 /** A held-back push: records why, and leaves every deadline field as it was. */
@@ -421,6 +498,22 @@ function knownEditTimes(v: Record<string, unknown>): number[] {
   return times;
 }
 
+/** Largest generation-like number (generation, ticket, token, acknowledgement or mark generation) a value names. */
+function largestGeneration(value: unknown): number {
+  let largest = 0;
+  const walk = (x: unknown) => {
+    if (Array.isArray(x)) x.forEach(walk);
+    else if (obj(x)) {
+      for (const [key, item] of Object.entries(x)) {
+        if (["generation", "first", "last", "ackGen", "gen", "ticket", "token"].includes(key) && Number.isSafeInteger(item) && (item as number) > largest) largest = item as number;
+        else walk(item);
+      }
+    }
+  };
+  walk(value);
+  return largest;
+}
+
 /**
  * Replacement for a record this engine cannot use as it is: an older schema, an unknown one, or one that
  * is damaged (`value` undefined). Nothing it says is taken as evidence that an edit was saved or captured.
@@ -428,25 +521,74 @@ function knownEditTimes(v: Record<string, unknown>): number[] {
  * from the earliest time the old record names, or from `lastWritten` (the file's last write) when that is
  * earlier or nothing is named. Only an all-documents save acknowledgement, a complete capture after it and
  * that snapshot's verification clear it. Its pending files keep their floors.
+ *
+ * Its write guards cannot be proved complete, so the replacement carries a capture quarantine: no capture
+ * or publication runs until a later explicit repair establishes every writer drained or gone. Every
+ * readable active mark is kept active with an unknown owner, its generation is never reused, and a reset
+ * floor at the oldest time keeps the checkout from ever reading as covered.
  */
-export function convertedRecord(value: unknown, lastWritten: number, now: number): DeadlineRecord {
+export function convertedRecord(value: unknown, lastWritten: number, now: number, recordId: string = newReceiptId()): DeadlineRecord {
   const v = obj(value) ? value : {};
-  const floor = Math.min(lastWritten, now, ...knownEditTimes(v));
-  const pendingSince: Record<string, number> = {};
+  const floor = Math.min(lastWritten, now, ...knownEditTimes(v), ...finiteTimesIn(v.receipts));
+  const generation = largestGeneration(v);
+  const pendingSince = pathMap<number>();
   if (obj(v.pendingSince)) for (const [path, t] of Object.entries(v.pendingSince)) if (isNum(t)) pendingSince[path] = t;
+  const writes = pathMap<WriteMark>();
+  const guard = (path: string, gen: unknown, since: number) => {
+    if (!receiptPath(path)) return;
+    writes[path] = { gen: Number.isSafeInteger(gen) && (gen as number) >= 0 ? (gen as number) : generation, active: true, since: Math.min(since, floor), owner: { unknown: "converted" } };
+    pendingSince[path] = Math.min(own(pendingSince, path) ?? floor, since, floor);
+  };
+  if (obj(v.writes)) for (const [path, w] of Object.entries(v.writes)) if (obj(w) && w.active === true && isNum(w.since)) guard(path, w.gen, w.since);
+  // The previous schema kept in-place writes as path -> start time.
+  if (obj(v.writing)) for (const [path, t] of Object.entries(v.writing)) if (isNum(t) && !own(writes, path)) guard(path, undefined, t);
   const schema = value === undefined ? "damaged" : isNum(v.schema) && Number.isSafeInteger(v.schema) ? v.schema : "damaged";
+  const ledger: ReceiptLedger = { ...freshLedger({ from: floor, reason: "converted", at: now }, nextCounters(v.receipts), { since: floor, reason: "incomplete-guards" }), recordId };
   const record: DeadlineRecord = {
     ...emptyRecord(),
+    generation,
     unflushed: [{ path: null, from: floor, first: 0, last: 0 }],
     pendingSince,
+    writes,
     snapshotSeq: Number.isSafeInteger(v.snapshotSeq) && (v.snapshotSeq as number) >= 0 ? (v.snapshotSeq as number) : 0,
     lastVerifiedSnapshot: typeof v.lastVerifiedSnapshot === "string" ? v.lastVerifiedSnapshot : null,
     lastVerifiedAt: isNum(v.lastVerifiedAt) ? v.lastVerifiedAt : null,
     protectedThrough: isNum(v.protectedThrough) ? Math.min(v.protectedThrough, floor) : null,
     recoveredFromDamagedRecord: true,
     convertedFrom: schema,
+    receipts: ledger,
   };
   return withOldest(record);
+}
+
+/**
+ * Replacement for a record whose legacy fields are sound but whose receipt ledger is not: every deadline
+ * field is kept; the ledger starts again with no activation (clients rebase) and a reset floor at the
+ * earliest time the damaged ledger names, the file's last write or now. Write guards are legacy marks and
+ * survive: a strictly valid tag is kept, any other tag becomes an unknown owner, and a tagged mark is kept
+ * active (a tag is only ever written on an active mark, so an inactive tagged one is a damaged guard).
+ *
+ * The replacement carries a capture quarantine unless the damaged ledger proves the guard set complete
+ * (damagedGuardsComplete): an existing quarantine is never dropped, and a lost or unreadable guard is
+ * never replaced by the reset floor alone.
+ */
+export function repairedLedgerRecord(record: DeadlineRecord, damaged: unknown, lastWritten: number, now: number, recordId: string = newReceiptId()): DeadlineRecord {
+  const from = Math.min(lastWritten, now, ...finiteTimesIn(damaged));
+  const writes = pathMap<WriteMark>();
+  let guardDamaged = false;
+  for (const [path, mark] of Object.entries(record.writes)) {
+    const { owner, ...plain } = mark;
+    if (owner === undefined) {
+      writes[path] = plain;
+      continue;
+    }
+    if (!mark.active) guardDamaged = true;
+    writes[path] = { ...plain, active: true, owner: isTaggedOwner(owner) && ("unknown" in owner || owner.path === path) ? owner : { unknown: "damaged-ledger" } };
+  }
+  const complete = !guardDamaged && damagedGuardsComplete(damaged, record.writes);
+  const quarantine: ReceiptLedger["captureQuarantine"] = complete ? null : { since: from, reason: "incomplete-guards" };
+  const ledger: ReceiptLedger = { ...freshLedger({ from, reason: "damaged-ledger", at: now }, nextCounters(damaged), quarantine), recordId };
+  return withOldest({ ...record, writes, receipts: ledger });
 }
 
 export function protectionAgeSeconds(record: DeadlineRecord, now: number): number {
@@ -454,8 +596,43 @@ export function protectionAgeSeconds(record: DeadlineRecord, now: number): numbe
   return Math.max(0, Math.floor((now - record.oldestUnprotectedEdit) / 1000));
 }
 
-/** Accepts a parsed JSON value only if it is a record of this schema; anything else is converted (see convertedRecord). */
+/**
+ * How a parsed deadline.json value can be used:
+ * - "ok": a schema-3 record with no ledger or a valid version-2 one;
+ * - "unsupported": its ledger has another version; kept opaque, never rewritten or converted;
+ * - "ledger-damaged": legacy fields sound, ledger not (repairedLedgerRecord);
+ * - null: not a usable schema-3 record (convertedRecord).
+ */
+export type ParsedRecord =
+  | { kind: "ok" | "unsupported"; record: DeadlineRecord }
+  | { kind: "ledger-damaged"; record: DeadlineRecord; damaged: unknown };
+
+export function parseRecordDetailed(value: unknown): ParsedRecord | null {
+  const legacy = parseLegacy(value);
+  if (!legacy) return null;
+  const raw = (value as Record<string, unknown>).receipts;
+  const kind = ledgerKind(raw);
+  if (kind === "unsupported") return { kind, record: withOldest(legacy) };
+  const { receipts: _, ...plain } = legacy;
+  const tagged = Object.values(legacy.writes).some((w) => w.owner !== undefined);
+  if (kind === "none") return tagged ? { kind: "ledger-damaged", record: plain, damaged: undefined } : { kind: "ok", record: withOldest(legacy) };
+  const ledger = kind === "v2" ? parseLedger(raw, legacy) : null;
+  if (!ledger) return { kind: "ledger-damaged", record: plain, damaged: raw };
+  return { kind: "ok", record: withOldest(legacy) };
+}
+
+/** True when a parsed value carries a ledger of another version, which must never be converted away. */
+export function hasOpaqueLedger(value: unknown): boolean {
+  return obj(value) && ledgerKind(value.receipts) === "unsupported";
+}
+
+/** Accepts a parsed JSON value only if it is a record of this schema with a usable ledger (or none); anything else is converted (see convertedRecord) or repaired. */
 export function parseRecord(value: unknown): DeadlineRecord | null {
+  const parsed = parseRecordDetailed(value);
+  return parsed && parsed.kind !== "ledger-damaged" ? parsed.record : null;
+}
+
+function parseLegacy(value: unknown): DeadlineRecord | null {
   if (!obj(value)) return null;
   const v = value;
   if (v.schema !== 3) return null;
@@ -475,5 +652,5 @@ export function parseRecord(value: unknown): DeadlineRecord | null {
   // Tickets and acknowledgements can never be ahead of the counter that handed them out.
   const gen = v.generation as number;
   if ((v.unflushed as UnflushedEdits[]).some((u) => u.last > gen) || (v.flushed as FlushedEdit[]).some((f) => f.ackGen > gen) || Object.values(v.writes as Record<string, WriteMark>).some((w) => w.gen > gen)) return null;
-  return withOldest(value as unknown as DeadlineRecord);
+  return value as unknown as DeadlineRecord;
 }

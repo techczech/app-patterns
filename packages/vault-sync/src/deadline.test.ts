@@ -232,10 +232,14 @@ describe("deadline arithmetic", () => {
     r = noteFlush(r, { upTo: 0, paths: ["a.md"] }, 1_100_200);
     r = pushAndVerify(capture(r, 1_200_000, { snapshot: "s2", readPaths: ["a.md", "b.md"] }), "s2", 1_200_100);
     expect(r.oldestUnprotectedEdit).toBe(400_000);
-    // Only an acknowledgement for all documents, a complete capture after it and verification do.
+    // An acknowledgement for all documents, a complete capture after it and verification clear the
+    // vault-wide range; the conversion's reset floor still keeps the age (editor receipts contract §9.7).
     r = noteFlush(r, { upTo: 0, allDocuments: true }, 1_200_200);
     r = pushAndVerify(capture(r, 1_300_000, { snapshot: "s3", readPaths: ["a.md", "b.md"] }), "s3", 1_300_100);
-    expect(r.oldestUnprotectedEdit).toBeNull();
+    expect(r.unflushed).toEqual([]);
+    expect(r.flushed).toEqual([]);
+    expect(r.captured).toEqual([]);
+    expect(r.oldestUnprotectedEdit).toBe(400_000);
 
     // A damaged record, or one naming nothing, counts from the file's last write.
     expect(convertedRecord(undefined, 700_000, 1_000_000).oldestUnprotectedEdit).toBe(700_000);

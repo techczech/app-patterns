@@ -5,8 +5,9 @@
  */
 import { randomBytes } from "node:crypto";
 import { mkdir, open, readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
-import { convertedRecord, emptyRecord, parseRecord, type DeadlineRecord } from "./deadline.ts";
+import { basename, dirname, join } from "node:path";
+import { convertedRecord, emptyRecord, hasOpaqueLedger, parseRecordDetailed, repairedLedgerRecord, type DeadlineRecord } from "./deadline.ts";
+import { ledgerKind } from "./receipt-ledger.ts";
 
 export const ENGINE_FOLDER = "vault-sync";
 
@@ -68,10 +69,65 @@ export async function checkoutId(folder: EngineFolder): Promise<string> {
   }
 }
 
-export async function loadRecord(folder: EngineFolder): Promise<DeadlineRecord> {
-  let text: string;
+/** The record cannot be used safely as it is; nothing was written. */
+export class RecordUnsafeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RecordUnsafeError";
+  }
+}
+
+/** A durable write failed before its temporary file was opened: the target is unchanged. */
+export class PersistNotStarted extends Error {
+  readonly code?: string;
+  constructor(cause: unknown) {
+    super(String((cause as Error | null)?.message ?? cause), { cause });
+    this.name = "PersistNotStarted";
+    this.code = (cause as NodeJS.ErrnoException | null)?.code;
+  }
+}
+
+/** A durable write failed after its temporary file was opened: the target may or may not hold the new bytes. */
+export class PersistOutcomeUnknown extends Error {
+  readonly code?: string;
+  constructor(cause: unknown) {
+    super(String((cause as Error | null)?.message ?? cause), { cause });
+    this.name = "PersistOutcomeUnknown";
+    this.code = (cause as NodeJS.ErrnoException | null)?.code;
+  }
+}
+
+/** Test seams for durable writes, each given the target path: fault injection between the steps. */
+export const storeTestHooks: {
+  afterTmpOpen?: (path: string) => Promise<void> | void;
+  afterRename?: (path: string) => Promise<void> | void;
+  afterDirSync?: (path: string) => Promise<void> | void;
+  /** Runs inside syncDurable before the file is synced. */
+  beforeBarrier?: (path: string) => Promise<void> | void;
+} = {};
+
+/** Recovery writes a load completed: the aside copy of the old bytes, and the replacement record. */
+export interface RecoveryWrites {
+  aside: boolean;
+  replaced: boolean;
+}
+
+/**
+ * The deadline record. A damaged or older record is copied aside and replaced without losing its oldest
+ * edit time or treating anything in it as saved (deadline.ts, convertedRecord); the copy is durable before
+ * the replacement, and the original stays in place until the replacement is, so a failed replacement is
+ * refused again on the next load instead of continuing from an empty record. A record with a damaged
+ * receipt ledger keeps its deadline fields (repairedLedgerRecord). A ledger of another version is never
+ * rewritten: the record is returned as it is, and saveRecord refuses it.
+ *
+ * `recovery`, when given, hears which recovery writes completed, so a caller that fails afterwards does not
+ * report that nothing was written. A recovery write that fails throws PersistNotStarted or
+ * PersistOutcomeUnknown as any durable write does.
+ */
+export async function loadRecord(folder: EngineFolder, recovery?: RecoveryWrites): Promise<DeadlineRecord> {
+  let bytes: Buffer;
   try {
-    text = await readFile(folder.recordFile, "utf8");
+    bytes = await readFile(folder.recordFile);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyRecord();
     throw error;
@@ -79,37 +135,112 @@ export async function loadRecord(folder: EngineFolder): Promise<DeadlineRecord> 
   let value: unknown;
   let damaged = false;
   try {
-    value = JSON.parse(text);
+    value = JSON.parse(bytes.toString("utf8"));
   } catch {
     damaged = true;
   }
-  const parsed = damaged ? null : parseRecord(value);
-  if (parsed) return parsed;
-  // An older schema or a damaged record: keep it aside and convert it without losing its oldest edit
-  // time or treating anything in it as saved (deadline.ts, convertedRecord).
+  if (!damaged) {
+    const parsed = parseRecordDetailed(value);
+    if (parsed && parsed.kind !== "ledger-damaged") return parsed.record;
+    if (parsed) {
+      const info = await stat(folder.recordFile);
+      await writeFileAtomic(`${folder.recordFile}.receipts-damaged-${Date.now()}`, bytes);
+      if (recovery) recovery.aside = true;
+      const repaired = repairedLedgerRecord(parsed.record, parsed.damaged, info.mtimeMs, Date.now());
+      await saveRecord(folder, repaired);
+      if (recovery) recovery.replaced = true;
+      return repaired;
+    }
+    if (hasOpaqueLedger(value)) throw new RecordUnsafeError("the deadline record holds a receipt ledger from a newer engine and other fields this engine cannot read; it is left as it is");
+  }
   const info = await stat(folder.recordFile);
-  const aside = `${folder.recordFile}.${damaged ? "damaged" : "converted"}-${Date.now()}`;
-  await rename(folder.recordFile, aside);
+  await writeFileAtomic(`${folder.recordFile}.${damaged ? "damaged" : "converted"}-${Date.now()}`, bytes);
+  if (recovery) recovery.aside = true;
   const converted = convertedRecord(damaged ? undefined : value, info.mtimeMs, Date.now());
   await saveRecord(folder, converted);
+  if (recovery) recovery.replaced = true;
   return converted;
 }
 
 export async function saveRecord(folder: EngineFolder, record: DeadlineRecord): Promise<void> {
+  if (ledgerKind(record.receipts) === "unsupported") throw new RecordUnsafeError("the deadline record holds a receipt ledger from a newer engine; this engine does not change it");
   await writeJsonAtomic(folder.recordFile, record);
 }
 
-/** Writes JSON to a temporary file, syncs it and renames it over `path`. */
-export async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
-  const tmp = `${path}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
-  const handle = await open(tmp, "w");
+async function syncDir(dir: string): Promise<void> {
+  const handle = await open(dir, "r");
   try {
-    await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`);
     await handle.sync();
   } finally {
     await handle.close();
   }
-  await rename(tmp, path);
+}
+
+/**
+ * Writes bytes to a temporary file, syncs it, renames it over `path` and syncs the folder, so the new
+ * name survives a power loss. Throws PersistNotStarted when nothing was opened, PersistOutcomeUnknown after.
+ */
+export async function writeFileAtomic(path: string, data: string | Buffer): Promise<void> {
+  const tmp = `${path}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
+  let handle;
+  try {
+    handle = await open(tmp, "w");
+  } catch (error) {
+    throw new PersistNotStarted(error);
+  }
+  let renamed = false;
+  try {
+    try {
+      await storeTestHooks.afterTmpOpen?.(path);
+      await handle.writeFile(data);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await rename(tmp, path);
+    renamed = true;
+    await storeTestHooks.afterRename?.(path);
+    await syncDir(dirname(path));
+    await storeTestHooks.afterDirSync?.(path);
+  } catch (error) {
+    if (!renamed) await unlink(tmp).catch(() => undefined);
+    throw new PersistOutcomeUnknown(error);
+  }
+}
+
+/** Writes JSON durably (writeFileAtomic). */
+export async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
+  let text: string;
+  try {
+    text = `${JSON.stringify(value, null, 2)}\n`;
+  } catch (error) {
+    throw new PersistNotStarted(error);
+  }
+  await writeFileAtomic(path, text);
+}
+
+/** Durability barrier for a file already in place: syncs it and its folder (a cached receipt reply needs this before it is sent). */
+export async function syncDurable(path: string): Promise<void> {
+  try {
+    await storeTestHooks.beforeBarrier?.(path);
+    const handle = await open(path, "r");
+    try {
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await syncDir(dirname(path));
+  } catch (error) {
+    throw new PersistOutcomeUnknown(error);
+  }
+}
+
+/** The lock was not acquired within its wait; nothing ran under it. */
+export class LockTimeoutError extends Error {
+  constructor() {
+    super("another backup operation holds this checkout's lock");
+    this.name = "LockTimeoutError";
+  }
 }
 
 export interface LockOptions {
@@ -261,7 +392,7 @@ export async function withFolderLock<T>(lockDir: string, options: LockOptions, f
         await removeIfPresent(join(lockDir, name));
       }
       if (!waiting) break;
-      if (Date.now() > deadline) throw new Error("another backup operation holds this checkout's lock");
+      if (Date.now() > deadline) throw new LockTimeoutError();
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
   } catch (error) {

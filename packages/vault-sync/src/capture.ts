@@ -9,6 +9,11 @@
  * files and the one after) keeps the previous version too. A path absent from the listing is recorded as
  * deleted only after a direct check confirms it is gone. The commit message carries the coverage claim
  * (snapshot-message.ts), and the deadline record is settled in the same step (deadline.ts).
+ *
+ * Record safety: a capture takes a safety stamp from the record it reads before any file and refuses if
+ * the record is quarantined (its write guards could not be recovered) or holds a ledger of another version.
+ * The record read after the files, and the one the capture settles into, must carry the same stamp;
+ * otherwise the whole attempt is discarded before any snapshot credit.
  */
 import { createHash } from "node:crypto";
 import { lstat, rm } from "node:fs/promises";
@@ -18,8 +23,10 @@ import { backupRef, latestDayRef } from "./backup-ref.ts";
 import { BackupRefusedError } from "./blocks.ts";
 import { chainProblem, recordRoot } from "./chain.ts";
 import { applyCapture, coverageOfCapture, markPending, type CaptureOutcome, type DeadlineRecord } from "./deadline.ts";
-import type { EngineFolder } from "./engine-store.ts";
+import { RecordUnsafeError, type EngineFolder } from "./engine-store.ts";
 import { splitNul, type GitRunner, type GitRunOptions } from "./git-process.ts";
+import { own } from "./path-map.ts";
+import { recordSafety, stampBroken } from "./receipt-ledger.ts";
 import { compileScope, listScope, underAny, type BackupScope, type SkippedPath } from "./scope.ts";
 import { formatSnapshotMessage } from "./snapshot-message.ts";
 import { checkContainment, readStable, statKey, type GitFileMode } from "./stable-read.ts";
@@ -167,6 +174,9 @@ async function capturePass(ctx: RepoContext, scope: BackupScope, deps: CaptureDe
   // it, and its write marks are compared with the record after the reads.
   checkReadBudget();
   const before = await readRecord(ctx);
+  const safety = recordSafety(before);
+  if ("unsafe" in safety) throw new RecordUnsafeError(safety.unsafe);
+  const stamp = safety.stamp;
   const writesBefore = before.writes;
 
   const { files, skipped, unreadable, listed: listedFolders } = await listScope(ctx.root, compiled);
@@ -186,7 +196,7 @@ async function capturePass(ctx: RepoContext, scope: BackupScope, deps: CaptureDe
     checkReadBudget();
     const abs = join(ctx.root, ...path.split("/"));
     const before = prevEntries.get(path);
-    if (writesBefore[path]?.active) {
+    if (own(writesBefore, path)?.active) {
       ctx.cache.delete(path);
       leavePending(path, "writing");
       continue;
@@ -254,7 +264,7 @@ async function capturePass(ctx: RepoContext, scope: BackupScope, deps: CaptureDe
     const parts = path.split("/");
     if (!path || path.startsWith("/") || path.includes("\0") || parts.some((p) => p === "" || p === "." || p === "..")) continue;
     const inScope = compiled.isIncluded(path) && !parts.some((_, i) => compiled.isExcluded(parts.slice(0, i + 1).join("/")));
-    if (inScope && writesBefore[path]?.active) {
+    if (inScope && own(writesBefore, path)?.active) {
       leavePending(path, "writing");
       continue;
     }
@@ -288,9 +298,11 @@ async function capturePass(ctx: RepoContext, scope: BackupScope, deps: CaptureDe
   // Check generations after both reads and absence checks: a write that completed during either
   // invalidates that proof, even when the clock is equal or rolled back and it is no longer active.
   const record = await readRecord(ctx);
+  const broken = stampBroken(stamp, record);
+  if (broken) throw new RecordUnsafeError(broken);
   for (const path of new Set([...read.keys(), ...goneConfirmed, ...removals])) {
-    const after = record.writes[path];
-    const was = writesBefore[path];
+    const after = own(record.writes, path);
+    const was = own(writesBefore, path);
     if (!was?.active && !after?.active && (after?.gen ?? null) === (was?.gen ?? null)) continue;
     read.delete(path);
     removals.delete(path);
@@ -362,6 +374,8 @@ async function capturePass(ctx: RepoContext, scope: BackupScope, deps: CaptureDe
     clearedPaths: cleared,
     unlistedFolders: [...unlisted].sort(),
     relistedFolders: relisted,
+    // The final read map, after the generation check above removed every path a write touched.
+    readOids: Object.fromEntries([...read].map(([path, entry]) => [path, entry.oid])),
   };
   if (outcome.committed) {
     // Parents are earlier snapshots only (see the invariants above).
@@ -387,12 +401,19 @@ async function capturePass(ctx: RepoContext, scope: BackupScope, deps: CaptureDe
   if (result.snapshot && result.ref) {
     const snapshot = result.snapshot;
     const snapshotRef = result.ref;
-    await persist(ctx, (r) => applyCapture(r, { ...outcome, snapshot, ref: snapshotRef }).record);
+    await persist(ctx, (r) => applyCapture(settleable(stamp, r), { ...outcome, snapshot, ref: snapshotRef }).record);
   } else {
     // No snapshot exists yet: keep the pending marks (and their floors) for the next capture.
-    await persist(ctx, (r) => markPending(r, outcome));
+    await persist(ctx, (r) => markPending(settleable(stamp, r), outcome));
   }
   return result;
+}
+
+/** The record a capture settles into, checked under the record lock against the stamp it read first. */
+function settleable(stamp: Parameters<typeof stampBroken>[0], record: DeadlineRecord): DeadlineRecord {
+  const broken = stampBroken(stamp, record);
+  if (broken) throw new RecordUnsafeError(broken);
+  return record;
 }
 
 /** Whether a path absent from the listing is really gone: "gone" only for ENOENT or ENOTDIR on the path or a parent. */

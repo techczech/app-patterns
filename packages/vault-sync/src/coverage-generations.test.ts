@@ -241,16 +241,16 @@ describe("an older deadline record (R6)", () => {
     expect(status.recoveredFromDamagedRecord).toBe(true);
     expect(readdirSync(join(repo, ".git", "vault-sync")).some((n) => n.startsWith("deadline.json.converted-"))).toBe(true);
 
-    // A restart and an ordinary complete backup do not clear the unknown save state.
+    // Its write guards cannot be proved complete, so after a restart capture stays refused (editor
+    // receipts contract §11), an all-documents acknowledgement does not lift that, and the oldest edit stays.
     const restarted = engine();
-    const r = await backUp(restarted, repo);
-    expect(r.verified.verified).toBe(true);
-    expect(r.status.oldestUnprotectedEdit).toBe(oldest);
-    // Only an acknowledgement for all documents, a later capture and its verification do.
+    await expect(restarted.capture(repo, { include: ["notes"] })).rejects.toThrow(/write guards/);
     await restarted.noteFlush(repo, { upTo: 0, allDocuments: true });
     put(repo, "notes/a.md", "a2");
-    status = (await backUp(restarted, repo)).status;
-    expect(status.oldestUnprotectedEdit).toBeNull();
-    expect(status.recoveredFromDamagedRecord).toBe(false);
+    await expect(restarted.capture(repo, { include: ["notes"] })).rejects.toThrow(/write guards/);
+    status = await restarted.status(repo);
+    expect(status.oldestUnprotectedEdit).toBe(oldest);
+    expect(status.recoveredFromDamagedRecord).toBe(true);
+    expect(status.latestSnapshot).toBeNull();
   });
 });

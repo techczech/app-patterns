@@ -31,6 +31,11 @@
  * started after it, and verification; reporting an edit never counts as saving it, and acknowledging one
  * document never counts for another. Edits the engine finds on disk without a report are protected from
  * the capture that read them.
+ *
+ * Editor receipts (`receipts`, engine-receipts.ts) are the tagged route: identified documents, sequenced
+ * and deduplicated in the deadline record, under the record lock only. The untagged calls above never
+ * touch receipt debt and never end a tagged write. Capture and publication refuse while the record is
+ * quarantined or holds a receipt ledger from a newer engine (receipt-ledger.ts, recordSafety).
  */
 import { devNull, homedir } from "node:os";
 import { access, readdir, realpath, stat } from "node:fs/promises";
@@ -44,9 +49,11 @@ import { readEnablement, removeEnablement, urlDigest, writeEnablement, type Enab
 import { defaultMountInfo, isCloudSyncedLocation, isNetworkMount, type MountInfoReader } from "./location.ts";
 import { collectPushBlobs, createGitleaksScanner, describeFindings, type NotScannedBlob, type SecretFinding, type SecretScanner, type SecretScanResult } from "./secret-scan.ts";
 import { applyPushed, applyVerified, noteEdit as noteEditInRecord, noteFlush as noteFlushInRecord, noteWriteStart as noteWriteStartInRecord, protectionAgeSeconds, withBlock, withError, type BackupErrorRecord, type DeadlineRecord, type EditTicket, type WriteToken, type FlushAcknowledgement, type SnapshotCoverage } from "./deadline.ts";
+import { createReceiptsApi, type ReceiptsApi } from "./engine-receipts.ts";
 import { checkoutId as readCheckoutId, engineFolder, ensureEngineFolder, loadRecord, saveRecord, withFolderLock } from "./engine-store.ts";
 import { createGitRunner, type GitRunner, type ProcessLauncher } from "./git-process.ts";
 import { createRestoreApi, type RestoreApi } from "./restore.ts";
+import { ledgerUnflushedSince, recordSafety } from "./receipt-ledger.ts";
 import { lsRemoteAt, pushIn, withTransport, type ObjectStore, type TransportContext } from "./transport.ts";
 import type { BackupScope } from "./scope.ts";
 
@@ -191,6 +198,8 @@ export interface BackupEngine extends RestoreApi {
   /** Reports that a writer starts writing these worktree-relative paths in place; returns the interval token to supply in `noteFlush.completedWrites`. */
   noteWriteStart(repo: string, paths: readonly string[]): Promise<WriteToken>;
   status(repo: string, options?: OperationOptions): Promise<BackupStatus>;
+  /** Editor receipts for a helper: record lock only, 2 000 ms budget, durable before every reply. */
+  receipts: ReceiptsApi;
 }
 
 const REMOTE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
@@ -522,8 +531,17 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
     },
   });
 
+  const receipts = createReceiptsApi({
+    now,
+    locate: async (repo) => {
+      const ctx = await context(await realRoot(repo));
+      return { folder: ctx.folder, objectFormat: ctx.objectFormat };
+    },
+  });
+
   return {
     ...restoreApi,
+    receipts,
     async enable(repo, opts = {}) {
       const real = await realRoot(repo);
       const where = await locationBlock(real);
@@ -596,19 +614,26 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
         const who = { email: author.email, machineId, checkoutId: ctx.checkoutId };
         // History check, scan and push share one transport context, so all three see the same objects and
         // the push goes to the address validated above, whatever the repository's configuration says now.
-        let outcome: { block: BackupBlock } | { failed: string } | { result: Awaited<ReturnType<typeof pushIn>>; notScanned: NotScannedBlob[] };
+        let outcome: { block: BackupBlock } | { failed: string } | { unsafe: string } | { result: Awaited<ReturnType<typeof pushIn>>; notScanned: NotScannedBlob[] };
         try {
           outcome = await withTransport(storeOf(ctx), async (t) => {
             const problem = await chainProblem(runner(devNull), t.options(localLimits(opts.signal)), ctx.folder, current.oid, who);
             if (problem) return { block: block("unsupported-history", `${problem}; automatic backup does not extend or publish it`) };
             const scanned = await scanForPush(t, current.oid, opts.signal);
             if ("block" in scanned) return scanned;
+            // The record's safety, checked again immediately before any object is sent.
+            const safety = recordSafety(await readRecord(ctx));
+            if ("unsafe" in safety) return { unsafe: safety.unsafe };
             return { result: await pushIn(ctx.git, t, destination.url, current.oid, current.ref, networkLimits(opts.signal)), notScanned: scanned.notScanned };
           });
         } catch (error) {
           outcome = { failed: (error as Error).message };
         }
         if ("block" in outcome) return holdPush(ctx, outcome.block);
+        if ("unsafe" in outcome) {
+          await recordError(ctx, "push-failed", outcome.unsafe).catch(() => undefined);
+          return { state: "failed", ref: current.ref, snapshot: current.oid, message: outcome.unsafe };
+        }
         if ("failed" in outcome) {
           await recordError(ctx, "push-failed", outcome.failed);
           return { state: "failed", ref: current.ref, snapshot: current.oid, message: outcome.failed };
@@ -724,7 +749,7 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
           lastPushed: record.lastPushed,
           pending: Object.keys(record.pendingSince).sort(),
           unlistedFolders: Object.keys(record.unlistedSince).sort(),
-          unflushedEditSince: record.unflushed.reduce<number | null>((oldest, u) => (oldest === null ? u.from : Math.min(oldest, u.from)), null),
+          unflushedEditSince: record.unflushed.reduce<number | null>((oldest, u) => (oldest === null ? u.from : Math.min(oldest, u.from)), ledgerUnflushedSince(record.receipts)),
           writing: Object.entries(record.writes).filter(([, w]) => w.active).map(([path]) => path).sort(),
           lastError: record.lastError,
           recoveredFromDamagedRecord: record.recoveredFromDamagedRecord === true,

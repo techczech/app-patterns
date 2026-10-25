@@ -9,3 +9,7 @@ export { isCloudSyncedLocation, isNetworkMount, parseMountTable, mountFor, defau
 export { createGitleaksScanner, type GitleaksOptions, type NotScannedBlob, type ScanBlob, type SecretFinding, type SecretScanResult, type SecretScanner } from "./secret-scan.ts";
 export type { ProcessLauncher } from "./git-process.ts";
 export { RestoreRefusedError, type BackupEntry, type ListSnapshotsOptions, type RestoreApi, type RestoreOperation, type RestoreOptions, type RestoreRefusal, type RestoreResult, type SnapshotInfo } from "./restore.ts";
+export type { ReceiptsApi } from "./engine-receipts.ts";
+export { RECEIPT_ENGINE_LEVEL, RECEIPT_LOCK_WAIT_MS, type DocRef, type HelperIncarnation, type ReceiptLimits, type ReceiptResult, type RefusalCode, type WriterIncarnation } from "./receipt-ledger.ts";
+export type { ActivationAttestation, GoneWriterProof, ListView, OpenStreamRequest, OpenStreamResult, ReceiptError, ReceiptErrorCode, ReceiptSession, SeqRequest, StreamIdentity } from "./receipt-transitions.ts";
+export type { Agg, DocProofView, ReceiptStatusView, WantedDoc } from "./receipt-status.ts";
