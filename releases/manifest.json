@@ -22,14 +22,14 @@
       "packedAt": "2026-10-21T08:04:12.287Z"
     },
     "@app-patterns/settings": {
-      "version": "0.4.1",
-      "file": "app-patterns-settings-0.4.1.tgz",
-      "integrity": "sha512-QzzOvkN87Am3N0G4a8NVJVqVD/wIfQXZsDT29P2RTLY+c6gHPrfbJDrntP6cERKkjOZgTf5C/0FxO21AKZp8nw==",
-      "contentsDigest": "sha256-E8gMe1XihBWClgGPsHyKevLJh5SbKPMSHlhzSrCt+3g=",
+      "version": "0.4.2",
+      "file": "app-patterns-settings-0.4.2.tgz",
+      "integrity": "sha512-kjib6ofsp5oDwOx+0W5xQKF/yGUaSizOq1Hoapz7l2Bqi6JGG5oex54co9uaNKhE2akphYbM8r6Wb6ia8rGWxQ==",
+      "contentsDigest": "sha256-3vrBdmcZs0T8MRFDRrUVU25qru+VkWfXwCBKPiEjUEo=",
       "frameworkPeers": {},
-      "commit": "75dd73baedad926ee0b18fcba9a73f7eb760ff81",
-      "commitDirty": false,
-      "packedAt": "2026-10-21T08:04:12.306Z"
+      "commit": "83771127cd6c1ff5c741b2057358f7a292e1ce47",
+      "commitDirty": true,
+      "packedAt": "2026-10-25T11:45:11.126Z"
     },
     "@app-patterns/settings-electron": {
       "version": "0.4.2",
@@ -167,6 +167,15 @@
       "commit": "75dd73baedad926ee0b18fcba9a73f7eb760ff81",
       "commitDirty": false,
       "packedAt": "2026-10-21T08:04:12.306Z"
+    },
+    "app-patterns-settings-0.4.2.tgz": {
+      "name": "@app-patterns/settings",
+      "version": "0.4.2",
+      "integrity": "sha512-kjib6ofsp5oDwOx+0W5xQKF/yGUaSizOq1Hoapz7l2Bqi6JGG5oex54co9uaNKhE2akphYbM8r6Wb6ia8rGWxQ==",
+      "contentsDigest": "sha256-3vrBdmcZs0T8MRFDRrUVU25qru+VkWfXwCBKPiEjUEo=",
+      "commit": "83771127cd6c1ff5c741b2057358f7a292e1ce47",
+      "commitDirty": true,
+      "packedAt": "2026-10-25T11:45:11.126Z"
     },
     "app-patterns-settings-electron-0.3.0.tgz": {
       "name": "@app-patterns/settings-electron",

@@ -515,12 +515,19 @@ const sameFolder = (a: Folder, b: Folder | null): boolean => !!b && a.dev === b.
 /** Errors that mean "this platform cannot fsync a folder", as opposed to a failed fsync. */
 const DIR_OPEN_UNSUPPORTED = new Set(["EISDIR", "EPERM", "EACCES", "EINVAL", "ENOTSUP", "EOPNOTSUPP"]);
 const DIR_SYNC_UNSUPPORTED = new Set(["EINVAL", "ENOTSUP", "EOPNOTSUPP"]);
+/** Windows opens a folder read-only but refuses to flush it: libuv reports EPERM. Elsewhere EPERM stays an error. */
+const dirSyncUnsupported = (code: string, platform: NodeJS.Platform): boolean =>
+  DIR_SYNC_UNSUPPORTED.has(code) || (platform === "win32" && code === "EPERM");
 
 /**
  * fsync the folder so the rename itself is on disk. A platform that cannot open or fsync a folder (EISDIR, EPERM/EACCES on opening it,
- * EINVAL, ENOTSUP) is not an error; any other failure (EIO) is thrown: the update may not survive a power cut.
+ * EINVAL, ENOTSUP, EPERM on fsyncing it on Windows) is not an error; any other failure (EIO) is thrown: the update may not survive a power cut.
  */
-export async function syncDir(dir: string, openDir: (dir: string) => Promise<Pick<FileHandle, "sync" | "close">> = (d) => open(d, constants.O_RDONLY)): Promise<void> {
+export async function syncDir(
+  dir: string,
+  openDir: (dir: string) => Promise<Pick<FileHandle, "sync" | "close">> = (d) => open(d, constants.O_RDONLY),
+  platform: NodeJS.Platform = process.platform,
+): Promise<void> {
   let fh;
   try {
     fh = await openDir(dir);
@@ -531,7 +538,7 @@ export async function syncDir(dir: string, openDir: (dir: string) => Promise<Pic
   try {
     await fh.sync();
   } catch (e) {
-    if (!DIR_SYNC_UNSUPPORTED.has((e as NodeJS.ErrnoException).code ?? "")) throw e;
+    if (!dirSyncUnsupported((e as NodeJS.ErrnoException).code ?? "", platform)) throw e;
   } finally {
     await fh.close().catch(() => undefined);
   }

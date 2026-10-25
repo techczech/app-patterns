@@ -104,6 +104,52 @@ describe("SettingsFile: folder fsync", () => {
     expect(r).toMatchObject({ ok: false, code: "unwritten" });
     rmSync(d, { recursive: true, force: true });
   });
+
+  it("ignores EPERM from a folder fsync on Windows only; EIO and a failed open still fail there", async () => {
+    await syncDir("/x", fake(() => Promise.reject(errno("EPERM"))), "win32");
+    for (const platform of ["darwin", "linux", "freebsd"] as const) {
+      await expect(syncDir("/x", fake(() => Promise.reject(errno("EPERM"))), platform)).rejects.toMatchObject({ code: "EPERM" });
+    }
+    await expect(syncDir("/x", fake(() => Promise.reject(errno("EIO"))), "win32")).rejects.toMatchObject({ code: "EIO" });
+    await expect(syncDir("/x", fake(() => Promise.reject(errno("EBUSY"))), "win32")).rejects.toMatchObject({ code: "EBUSY" });
+    await expect(syncDir("/x", fake(() => Promise.reject(new Error("no code"))), "win32")).rejects.toThrow("no code");
+    await expect(syncDir("/x", () => Promise.reject(errno("EIO")), "win32")).rejects.toMatchObject({ code: "EIO" });
+  });
+
+  describe("a whole update, in a process that reports the platform", () => {
+    const CHILD = join(import.meta.dir, "dir-sync-platform.test-support.ts");
+    const run = async (platform: string, failure: string) => {
+      const d = tempDir();
+      const p = Bun.spawn(["bun", CHILD, d, platform, failure], { stdout: "pipe", stderr: "pipe" });
+      const [out, err, exit] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+      expect({ exit, err }).toEqual({ exit: 0, err: "" });
+      const got = JSON.parse(out) as { platform: string; r: Record<string, unknown>; text: string | null };
+      expect(got.platform).toBe(platform);
+      return { ...got, temps: readdirSync(d).filter((n) => n !== "settings.json" && !n.endsWith(".lock")) };
+    };
+
+    it("Windows: a folder fsync refused with EPERM after the rename is a successful save", async () => {
+      const { r, text, temps } = await run("win32", "dir-EPERM");
+      expect(r).toEqual({ ok: true, result: "saved", written: true });
+      expect(JSON.parse(text!)).toEqual({ folder: "C:\\Reports" });
+      expect(temps).toEqual([]);
+    });
+
+    it("macOS and Linux: the same EPERM still reports the save unwritten", async () => {
+      for (const platform of ["darwin", "linux"]) expect((await run(platform, "dir-EPERM")).r).toMatchObject({ ok: false, code: "unwritten" });
+    });
+
+    it("Windows: EIO from the folder fsync still reports the save unwritten", async () => {
+      expect((await run("win32", "dir-EIO")).r).toMatchObject({ ok: false, code: "unwritten" });
+    });
+
+    it("Windows: EPERM from the commit itself reports the save unwritten and writes nothing", async () => {
+      const { r, text, temps } = await run("win32", "rename-EPERM");
+      expect(r).toMatchObject({ ok: false, code: "unwritten" });
+      expect(text).toBeNull();
+      expect(temps).toEqual([]);
+    });
+  });
 });
 
 describe("SettingsFile: fix round 2", () => {
