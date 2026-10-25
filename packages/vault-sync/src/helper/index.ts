@@ -5,3 +5,7 @@ export { PROTOCOL_VERSION, MAX_LINE_BYTES, MAX_REPLY_BYTES, RESERVED_RECEIPT_MET
 export type { CycleOutcome, CycleReport, VaultStatusReport, VaultSummary } from "./vault-worker.ts";
 export { VIEW_ITEM_LIMITS, type BlockView, type CycleReportView, type EngineStatusView, type ListView, type VaultStatusView } from "./status-view.ts";
 export { createProcessRegistry, type ProcessRegistry } from "./process-registry.ts";
+export { connectReceipts, ReceiptsClientError, type ConnectReceiptsOptions, type ReceiptReply, type ReceiptsClient, type ReceiptsClientErrorCode, type RequestOptions, type SeqBody } from "./receipt-client.ts";
+export { MIN_RECEIPTS_HELPER_VERSION, RECEIPTS_PROTOCOL_VERSION, type LaneErrorBody, type LaneErrorCode } from "./receipt-protocol.ts";
+export type { PriorShutdownEvidence } from "./activation.ts";
+export type { ProcessObservation, ProcessObserver } from "./process-observer.ts";

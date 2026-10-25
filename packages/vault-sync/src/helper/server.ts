@@ -13,6 +13,11 @@
  * (`<git-dir>/vault-sync/helper-owner`), so two helpers, even with different runtime folders, never both
  * schedule one vault. A vault claimed by a live helper makes a second helper refuse to start.
  *
+ * Receipts: a protocol-2 connection (receipt-session.ts) reaches each vault engine's receipt API only.
+ * The helper attests receipt activation only while it holds every claim and is not stopping
+ * (activation.ts). Receipt work in progress counts as work: shutdown waits for it before it ends the
+ * processes and releases the claims, and reports it as "receipt" when it is overdue.
+ *
  * Lifecycle: ownership is released only after every piece of work this helper started has actually
  * ended, on a normal stop and on a failed start alike. That includes native processes: every Git and
  * scanner process the engines start goes through the helper's process registry (process-registry.ts),
@@ -36,28 +41,30 @@
 import { createServer, type Server, type Socket } from "node:net";
 import type { Stats } from "node:fs";
 import { chmod, lstat } from "node:fs/promises";
-import { devNull } from "node:os";
+import { devNull, hostname } from "node:os";
 import { join } from "node:path";
 import { createBackupEngine, type BackupEngine, type BackupEngineOptions, type RemoteVisibility } from "../engine.ts";
 import { engineFolder, withFolderLock } from "../engine-store.ts";
 import { createGitRunner, type ProcessLauncher } from "../git-process.ts";
+import { compileScope } from "../scope.ts";
+import { helperIncarnation, type PriorShutdownEvidence } from "./activation.ts";
 import type { HelperConfig, RegisteredVault } from "./config.ts";
-import { encode, lineSplitter, MAX_REPLY_BYTES, parseHello, parseRequest, PROTOCOL_VERSION, ProtocolError, type HelloResponse, type Request, type Response } from "./protocol.ts";
+import { serveConnection } from "./connection.ts";
+import { createProcessObserver, type ProcessObserver } from "./process-observer.ts";
+import { PROTOCOL_VERSION } from "./protocol.ts";
 import { createProcessRegistry, type ProcessRegistry } from "./process-registry.ts";
+import { createWorkTracker, type ReceiptVault } from "./receipt-session.ts";
 import { assertSameFolder, prepareRuntimeFolder, removeOwnSocket, removeStaleSocket, type OwnSocketRemoval } from "./runtime-dir.ts";
-import { cycleReportView, VIEW_ITEM_LIMITS, vaultStatusView } from "./status-view.ts";
 import { createVaultWorker, systemClock, systemTimers, type Clock, type Timers, type VaultWorker } from "./vault-worker.ts";
 
-export const HELPER_VERSION = "0.1.0-spike";
+export const HELPER_VERSION = "0.2.0";
 /** Upper bound on one foreground run; the spike never runs open-ended. */
 export const MAX_RUNTIME_MS = 6 * 60 * 60_000;
 /** Upper bound on the grace period and on the time cancelled work is given to end. */
 export const MAX_STOP_PHASE_MS = 10 * 60_000;
 const MAX_CONNECTIONS = 16;
-const MAX_QUEUED_REQUESTS = 8;
-const HELLO_TIMEOUT_MS = 5_000;
 
-/** Work still running when stop reported "overdue", per vault: "cycle", "follow-up", "status-read". */
+/** Work still running when stop reported "overdue", per vault: "cycle", "follow-up", "status-read", "receipt". */
 export type UnsettledWork = Array<{ vault: string; work: string[] }>;
 
 /**
@@ -138,9 +145,21 @@ export interface StartHelperOptions {
    * passes its own so that it can contain those processes whatever happens to the start.
    */
   processes?: ProcessRegistry;
-  /** Test seam: replaces engine construction. Engines must start processes through `options.launch`. */
-  createEngine?: (vault: RegisteredVault, options: BackupEngineOptions) => Pick<BackupEngine, "capture" | "pushBackup" | "verify" | "status">;
+  /**
+   * Test seam: replaces engine construction. Engines must start processes through `options.launch`. An
+   * engine without `receipts` serves no receipts lane for its vault.
+   */
+  createEngine?: (vault: RegisteredVault, options: BackupEngineOptions) => Pick<BackupEngine, "capture" | "pushBackup" | "verify" | "status"> & Partial<Pick<BackupEngine, "receipts">>;
   onEvent?: (event: HelperEvent) => void;
+  /** Test seam: read-only process observation for incarnations. Default: `ps` through the process registry. */
+  observer?: ProcessObserver;
+  /** Test seam: this host's name in the helper incarnation. Default `os.hostname()`. */
+  host?: string;
+  /**
+   * The sealed shutdown report of the helper that last held receipt activation, if whoever ran it kept
+   * one. Only an exact, sealed report allows a handover; otherwise only that helper's observed absence does.
+   */
+  priorShutdown?: PriorShutdownEvidence;
 }
 
 export interface HelperHandle {
@@ -192,12 +211,13 @@ export class HelperStartError extends Error {
   }
 }
 
-/** Folder of a vault's helper-owner lock, read from Git without writing anything. */
-async function vaultOwnerLock(path: string, gitEnv: Record<string, string> | undefined, launch: ProcessLauncher): Promise<string> {
+/** Folder of a vault's helper-owner lock and its deadline record, read from Git without writing anything. */
+async function vaultOwnerLock(path: string, gitEnv: Record<string, string> | undefined, launch: ProcessLauncher): Promise<{ dir: string; recordFile: string }> {
   const git = createGitRunner({ hooksDir: devNull, env: gitEnv, launch });
   const gitDir = (await git.ok(["rev-parse", "--absolute-git-dir"], { cwd: path, timeoutMs: 30_000, maxOutputBytes: 64 * 1024 })).toString("utf8").trim();
   if (!gitDir) throw new Error("could not read the vault's git folder");
-  return join(engineFolder(gitDir).dir, "helper-owner");
+  const folder = engineFolder(gitDir);
+  return { dir: join(folder.dir, "helper-owner"), recordFile: folder.recordFile };
 }
 
 const LOCK_BUSY = "holds this checkout's lock";
@@ -381,10 +401,12 @@ export async function startHelper(options: StartHelperOptions): Promise<HelperHa
   };
 
   // Every lookup ends (and leaves no process behind) before a failure is reported; no claim is held yet.
-  const lookups = await Promise.allSettled(config.vaults.map(async (v) => ({ id: v.id, dir: await vaultOwnerLock(v.path, options.engineOptions?.gitEnv, processes.launch) })));
+  const lookups = await Promise.allSettled(config.vaults.map(async (v) => ({ id: v.id, ...(await vaultOwnerLock(v.path, options.engineOptions?.gitEnv, processes.launch)) })));
   const failed = lookups.find((l) => l.status === "rejected");
   if (failed) return refuse(failed.reason);
-  const vaultLocks = lookups.map((l) => (l as PromiseFulfilledResult<{ id: string; dir: string }>).value);
+  const vaultLocks = lookups.map((l) => (l as PromiseFulfilledResult<{ id: string; dir: string; recordFile: string }>).value);
+  const observer = options.observer ?? createProcessObserver(processes.launch);
+  const identity = helperIncarnation(observer, options.host ?? hostname(), HELPER_VERSION);
   let workStarted = false;
   const claimed = withFolderLock(paths.ownerLock, { waitMs: 0, onReleaseError }, () => holdVaults(vaultLocks, onReleaseError, async () => {
     workStarted = true;
@@ -396,6 +418,9 @@ export async function startHelper(options: StartHelperOptions): Promise<HelperHa
     let own: Stats | null = null;
     let lifetime: unknown = null;
     const startedAt = clock.now();
+    const receiptVaults = new Map<string, ReceiptVault>();
+    // Receipt requests in progress; new ones are refused once `stopping` is set.
+    const receiptWork = createWorkTracker();
 
     /**
      * Ends everything this start acquired, in reverse, and returns only when all work has ended. Never
@@ -421,8 +446,9 @@ export async function startHelper(options: StartHelperOptions): Promise<HelperHa
           res();
         }
       });
-      // Every cycle settles first; then nothing may start, and whatever is left in a recorded group is ended.
+      // Every cycle and receipt request settles first; then nothing may start, and whatever is left in a recorded group is ended.
       const settled = Promise.allSettled([...workers.values()].map((w) => w.stop(graceMs)))
+        .then(() => receiptWork.settled())
         .then(() => endRegistry(processes, (error) => {
           fault("processes.end", error);
           answer(failedNow());
@@ -443,7 +469,7 @@ export async function startHelper(options: StartHelperOptions): Promise<HelperHa
         } catch (error) {
           fault("processes.seal", error);
         }
-        const unsettled = [...workers.values()].map((w) => ({ vault: w.id, work: w.unsettled() })).filter((u) => u.work.length > 0);
+        const unsettled = [...workers.values()].map((w) => ({ vault: w.id, work: [...w.unsettled(), ...(receiptWork.busy().includes(w.id) ? ["receipt"] : [])] })).filter((u) => u.work.length > 0);
         try {
           processGroups = processes.live();
         } catch (error) {
@@ -509,6 +535,8 @@ export async function startHelper(options: StartHelperOptions): Promise<HelperHa
       for (const vault of config.vaults) {
         const engineOptions: BackupEngineOptions = { remoteVisibility: localVisibility, ...options.engineOptions, launch: processes.launch, machineId: config.machineId, remote: vault.remote };
         const engine = options.createEngine ? options.createEngine(vault, engineOptions) : createBackupEngine(engineOptions);
+        const recordFile = vaultLocks.find((l) => l.id === vault.id)?.recordFile ?? null;
+        receiptVaults.set(vault.id, { vault, scope: compileScope(vault.scope), receipts: engine.receipts ?? null, recordFile });
         workers.set(vault.id, createVaultWorker({
           vault, engine, intervalMs: config.captureIntervalMs, clock, timers, pollMs: options.pollMs, statusTimeoutMs: options.statusTimeoutMs,
           onCycle: (r) => emit({ type: "cycle", at: clock.now(), vault: r.vault, reason: r.reason, outcome: r.outcome, startedAt: r.startedAt, finishedAt: r.finishedAt, snapshot: r.capture?.snapshot ?? null }),
@@ -522,7 +550,15 @@ export async function startHelper(options: StartHelperOptions): Promise<HelperHa
         sockets.add(socket);
         socket.on("close", () => sockets.delete(socket));
         try {
-          serveConnection(socket, workers, () => stopping, startedAt, timers);
+          serveConnection(socket, {
+            workers, stopping: () => stopping, startedAt, timers, helperVersion: HELPER_VERSION,
+            receipts: {
+              vaults: receiptVaults, helperVersion: HELPER_VERSION, identity, observer, priorShutdown: options.priorShutdown ?? null,
+              // Every claim is held for as long as this callback runs; it releases them only after shutdown.
+              exclusive: () => !stopping && startSettled && startError === null,
+              stopping: () => stopping, track: receiptWork.track, now: () => clock.now(),
+            },
+          });
         } catch {
           socket.destroy();
         }
@@ -596,120 +632,4 @@ export async function startHelper(options: StartHelperOptions): Promise<HelperHa
     refuse(refused).catch(rejectReady);
   });
   return ready;
-}
-
-function serveConnection(socket: Socket, workers: Map<string, VaultWorker>, stopping: () => boolean, startedAt: number, timers: Timers): void {
-  let greeted = false;
-  let finished = false;
-  let busy = false;
-  const queue: string[] = [];
-  const send = (message: HelloResponse | Response) => {
-    if (!socket.destroyed) socket.write(encode(message));
-  };
-  /** Sends a result in the largest view that fits a reply line; counts are exact in every view. */
-  const reply = (id: number, build: (maxItems: number) => unknown) => {
-    for (const maxItems of VIEW_ITEM_LIMITS) {
-      const line = encode({ id, ok: true, result: build(maxItems) });
-      if (Buffer.byteLength(line) <= MAX_REPLY_BYTES) {
-        if (!socket.destroyed) socket.write(line);
-        return;
-      }
-    }
-    fail(new ProtocolError("internal", "the reply would exceed the protocol's size limit", id), id);
-  };
-  const helloTimer = timers.set(() => {
-    if (!greeted) socket.destroy();
-  }, HELLO_TIMEOUT_MS);
-  socket.on("close", () => timers.clear(helloTimer));
-
-  const fail = (error: unknown, id: number | null) => {
-    const e = error instanceof ProtocolError ? error : new ProtocolError("internal", error instanceof Error ? error.message.slice(0, 500) : "internal error", id);
-    send({ id: e.id ?? id, ok: false, error: { code: e.code, message: e.message } });
-  };
-
-  /** Answers a request with a builder for its reply at a given item limit. */
-  async function handle(request: Request): Promise<(maxItems: number) => unknown> {
-    if (request.method === "status") {
-      let reports;
-      if (request.vault !== undefined) {
-        const worker = workers.get(request.vault);
-        if (!worker) throw new ProtocolError("unknown-vault", "no registered vault has this id", request.id);
-        reports = [await worker.status()];
-      } else {
-        reports = await Promise.all([...workers.values()].map((w) => w.status()));
-      }
-      const helper = helperInfo();
-      return (maxItems) => ({ helper, vaults: reports.map((r) => vaultStatusView(r, maxItems)) });
-    }
-    if (stopping()) throw new ProtocolError("stopping", "the helper is stopping", request.id);
-    const worker = workers.get(request.vault);
-    if (!worker) throw new ProtocolError("unknown-vault", "no registered vault has this id", request.id);
-    const report = await worker.syncNow();
-    return (maxItems) => cycleReportView(report, maxItems);
-  }
-  const helperInfo = () => ({ protocol: PROTOCOL_VERSION, helperVersion: HELPER_VERSION, pid: process.pid, startedAt, stopping: stopping() });
-
-  async function drain(): Promise<void> {
-    if (busy) return;
-    busy = true;
-    try {
-      while (queue.length && !socket.destroyed) {
-        const line = queue.shift()!;
-        let id: number | null = null;
-        try {
-          const request = parseRequest(line);
-          id = request.id;
-          reply(id, await handle(request));
-        } catch (error) {
-          fail(error, error instanceof ProtocolError ? error.id : id);
-        }
-      }
-    } finally {
-      busy = false;
-    }
-  }
-
-  const finish = () => {
-    finished = true;
-    queue.length = 0;
-    socket.end();
-  };
-  const split = lineSplitter((line) => {
-    if (finished) return;
-    if (!greeted) {
-      try {
-        const hello = parseHello(line);
-        if (hello.protocol !== PROTOCOL_VERSION) {
-          send({ type: "hello", ok: false, protocol: PROTOCOL_VERSION, error: { code: "protocol-mismatch", message: `this helper speaks protocol ${PROTOCOL_VERSION}` } });
-          finish();
-          return;
-        }
-        greeted = true;
-        timers.clear(helloTimer);
-        send({ type: "hello", ok: true, protocol: PROTOCOL_VERSION, helperVersion: HELPER_VERSION });
-      } catch (error) {
-        const e = error instanceof ProtocolError ? error : new ProtocolError("bad-request", "bad hello");
-        send({ type: "hello", ok: false, protocol: PROTOCOL_VERSION, error: { code: e.code, message: e.message } });
-        finish();
-      }
-      return;
-    }
-    if (queue.length >= MAX_QUEUED_REQUESTS) {
-      fail(new ProtocolError("bad-request", "too many queued requests on this connection"), null);
-      finish();
-      return;
-    }
-    queue.push(line);
-    void drain();
-  });
-  socket.on("data", (chunk: Buffer) => {
-    if (finished) return;
-    try {
-      split(chunk);
-    } catch (error) {
-      fail(error, null);
-      finish();
-    }
-  });
-  socket.on("error", () => socket.destroy());
 }

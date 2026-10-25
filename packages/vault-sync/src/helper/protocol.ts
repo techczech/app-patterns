@@ -7,8 +7,9 @@
  * remote, so a client can reach nothing the helper's configuration did not register.
  *
  * Methods in version 1: `status` and `syncNow`. The writer-receipt methods (`noteEdit`,
- * `noteWriteStart`, `noteFlush`) are reserved names; version 1 refuses them with `not-available`, because
- * no app adapter yet proves the obligations those receipts assert. A later version adds them.
+ * `noteWriteStart`, `noteFlush`) are reserved names; version 1 refuses them with `not-available`. Receipts
+ * travel only on a separate protocol-2 receipts connection (receipt-protocol.ts); a protocol-1 connection
+ * answers exactly as it did before that existed.
  *
  * Size: a request line is at most MAX_LINE_BYTES; a reply line at most MAX_REPLY_BYTES. The helper keeps
  * its replies inside that bound by listing at most a sample of each path list next to its exact count and
