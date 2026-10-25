@@ -12,12 +12,12 @@
  * - `createGitleaksScanner` materialises the blobs in a private temporary folder, runs
  *   `gitleaks detect --no-git --redact` over it, reads the JSON report and deletes the folder.
  */
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { constants } from "node:fs";
 import { access, chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, isAbsolute, join, relative, sep } from "node:path";
-import { splitNul, type GitRunner, type GitRunOptions } from "./git-process.ts";
+import { splitNul, type GitRunner, type GitRunOptions, type ProcessLauncher } from "./git-process.ts";
 
 export interface ScanBlob {
   path: string;
@@ -137,6 +137,8 @@ export interface GitleaksOptions {
   timeoutMs?: number;
   /** Larger reports are treated as a failed scan. Default 16 MiB. */
   maxReportBytes?: number;
+  /** Starts the scanner process. Default `spawn`. */
+  launch?: ProcessLauncher;
 }
 
 /** Package-manager folders that a GUI app's PATH usually lacks. */
@@ -178,6 +180,7 @@ export function createGitleaksScanner(options: GitleaksOptions = {}): SecretScan
   const dirs = options.searchDirs ?? [...(process.env.PATH ?? "").split(delimiter).filter(Boolean), ...EXTRA_DIRS];
   const timeoutMs = options.timeoutMs ?? 120_000;
   const maxReportBytes = options.maxReportBytes ?? 16 * 1024 * 1024;
+  const launch: ProcessLauncher = options.launch ?? spawn;
   return async (blobs) => {
     const command = await resolveExecutable(name, dirs);
     if (!command) return { unavailable: "scanner missing: gitleaks is not installed" };
@@ -196,7 +199,7 @@ export function createGitleaksScanner(options: GitleaksOptions = {}): SecretScan
         await writeFile(join(parent, segments[segments.length - 1]!), blob.bytes, { mode: 0o600 });
       }
       const report = join(dir, "report.json");
-      const outcome = await runGitleaks(command, ["detect", "--no-git", "--source", source, "--report-format", "json", "--report-path", report, "--redact", "--no-banner", "--log-level", "error", "--exit-code", "3"], dir, timeoutMs);
+      const outcome = await runGitleaks(command, ["detect", "--no-git", "--source", source, "--report-format", "json", "--report-path", report, "--redact", "--no-banner", "--log-level", "error", "--exit-code", "3"], dir, timeoutMs, launch);
       if (outcome === "missing") return { unavailable: "scanner missing: gitleaks is not installed" };
       if (outcome === "timeout") return { unavailable: "gitleaks did not finish in time" };
       if (outcome !== 0 && outcome !== 3) return { unavailable: `gitleaks failed (exit ${outcome})` };
@@ -230,11 +233,11 @@ export function createGitleaksScanner(options: GitleaksOptions = {}): SecretScan
 }
 
 /** Runs gitleaks with no shell; its output is discarded so nothing it prints can reach a log. */
-function runGitleaks(command: string, args: string[], cwd: string, timeoutMs: number): Promise<number | "missing" | "timeout"> {
+function runGitleaks(command: string, args: string[], cwd: string, timeoutMs: number, launch: ProcessLauncher): Promise<number | "missing" | "timeout"> {
   return new Promise((resolve) => {
-    let child: ReturnType<typeof spawn>;
+    let child: ChildProcess;
     try {
-      child = spawn(command, args, { cwd, env: scannerEnv(), stdio: ["ignore", "ignore", "ignore"], shell: false, windowsHide: true });
+      child = launch(command, args, { cwd, env: scannerEnv(), stdio: ["ignore", "ignore", "ignore"], shell: false, windowsHide: true });
     } catch {
       resolve("missing");
       return;

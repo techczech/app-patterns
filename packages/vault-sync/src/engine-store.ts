@@ -5,7 +5,7 @@
  */
 import { randomBytes } from "node:crypto";
 import { mkdir, open, readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { convertedRecord, emptyRecord, parseRecord, type DeadlineRecord } from "./deadline.ts";
 
 export const ENGINE_FOLDER = "vault-sync";
@@ -114,10 +114,28 @@ export async function writeJsonAtomic(path: string, value: unknown): Promise<voi
 
 export interface LockOptions {
   waitMs: number;
+  /**
+   * Hears a failure to remove one of this contender's own files, which then stays and keeps the lock held
+   * until this process is gone: its ticket, which the lock otherwise suppresses, or, while acquiring, its
+   * choosing announcement. With a listener, a failed withdrawal of the announcement also removes the ticket
+   * already taken (a failure to is reported too), and an earlier acquisition error is thrown in place of the
+   * withdrawal error. A rejected exclusive creation of this contender's own file, other than `EEXIST`, may
+   * have come after the file was created (a failed write or close), so it is reported too: the file may be
+   * left. Nothing is removed on that account. Opt-in; a throwing listener is ignored.
+   */
+  onReleaseError?: (error: unknown) => void;
 }
 
-/** Test seam: runs before a dead contender's file is removed. */
-export const lockTestHooks: { beforeRemoveDead?: (name: string) => Promise<void> | void } = {};
+/**
+ * Test seams: `beforeRemoveDead` runs before a dead contender's file is removed; `beforeWithdraw` runs after
+ * this contender's ticket was taken, before its choosing announcement is withdrawn; `createFile` replaces the
+ * exclusive creation of this contender's choosing and ticket files.
+ */
+export const lockTestHooks: {
+  beforeRemoveDead?: (name: string) => Promise<void> | void;
+  beforeWithdraw?: (lockDir: string) => Promise<void> | void;
+  createFile?: (path: string) => Promise<void>;
+} = {};
 
 function alive(pid: number): boolean {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -147,6 +165,8 @@ function parseContender(name: string): Contender | null {
   return { name, kind, number: m[2] ? Number(m[2]) : 0, pid: Number(m[3]), id: `${m[3]}-${m[4]}` };
 }
 
+const exclusive = (path: string) => writeFile(path, "", { flag: "wx" });
+
 const before = (a: Contender, b: Contender) => a.number < b.number || (a.number === b.number && a.id < b.id);
 
 async function removeIfPresent(path: string): Promise<void> {
@@ -171,9 +191,31 @@ export async function withFolderLock<T>(lockDir: string, options: LockOptions, f
   const deadline = Date.now() + options.waitMs;
   const id = `${process.pid}-${randomBytes(6).toString("hex")}`;
   await mkdir(lockDir, { recursive: true });
+  const releaseFailed = (error: unknown) => {
+    try {
+      options.onReleaseError?.(error);
+    } catch {
+      // Reporting cannot change the lock's own outcome.
+    }
+  };
+  // A rejection other than EEXIST does not show the file is absent, so with a listener the claim is reported
+  // as possibly left. EEXIST means this attempt created nothing, and the file there is never removed. Without
+  // a listener the creation's own promise is awaited, as before.
+  const create = (path: string): Promise<void> => {
+    const made = (lockTestHooks.createFile ?? exclusive)(path);
+    if (!options.onReleaseError) return made;
+    return made.catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException | null)?.code !== "EEXIST") {
+        releaseFailed(new Error(`${basename(path)} may be left: its creation did not complete: ${String((error as Error | null)?.message ?? error)}`, { cause: error }));
+      }
+      throw error;
+    });
+  };
   const choosing = join(lockDir, `choosing-${id}`);
-  await writeFile(choosing, "", { flag: "wx" });
-  let mine: Contender;
+  await create(choosing);
+  // Set once this contender's ticket creation completed.
+  let mine: Contender | null = null;
+  let failure: { error: unknown } | null = null;
   try {
     let highest = 0;
     for (const name of await readdir(lockDir)) {
@@ -181,10 +223,27 @@ export async function withFolderLock<T>(lockDir: string, options: LockOptions, f
       if (c?.kind === "ticket") highest = Math.max(highest, c.number);
     }
     const name = `ticket-${String(highest + 1).padStart(12, "0")}-${id}`;
-    await writeFile(join(lockDir, name), "", { flag: "wx" });
+    await create(join(lockDir, name));
     mine = parseContender(name)!;
-  } finally {
+    const hook = lockTestHooks.beforeWithdraw;
+    if (hook) await hook(lockDir);
+  } catch (error) {
+    failure = { error };
+  }
+  try {
     await removeIfPresent(choosing);
+  } catch (error) {
+    // Without a listener the withdrawal error replaces any other and a ticket taken stays, as before.
+    if (!options.onReleaseError) throw error;
+    releaseFailed(error);
+    if (mine) await removeIfPresent(join(lockDir, mine.name)).catch(releaseFailed);
+    throw failure ? failure.error : error;
+  }
+  if (!mine) throw failure!.error;
+  if (failure) {
+    // Only the test seam can fail once the ticket exists: the ticket is withdrawn and the seam's error thrown.
+    await removeIfPresent(join(lockDir, mine.name)).catch(releaseFailed);
+    throw failure.error;
   }
   const ticket = join(lockDir, mine.name);
   try {
@@ -206,12 +265,12 @@ export async function withFolderLock<T>(lockDir: string, options: LockOptions, f
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
   } catch (error) {
-    await removeIfPresent(ticket).catch(() => undefined);
+    await removeIfPresent(ticket).catch(releaseFailed);
     throw error;
   }
   try {
     return await fn();
   } finally {
-    await removeIfPresent(ticket).catch(() => undefined);
+    await removeIfPresent(ticket).catch(releaseFailed);
   }
 }

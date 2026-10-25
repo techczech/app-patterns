@@ -16,7 +16,7 @@
  * - network operations do not run here against the repository's configuration at all: see transport.ts;
  * - stderr is capped and credentials in URLs are redacted before it leaves this module.
  */
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { devNull } from "node:os";
 
 export type GitFailureKind = "timeout" | "aborted" | "output-limit" | "spawn" | "exit";
@@ -87,8 +87,17 @@ export function scrubbedEnv(base: NodeJS.ProcessEnv, extra: Record<string, strin
   return { ...env, ...extra };
 }
 
+/**
+ * Starts a native process: the only way the engine starts Git or the secret scanner. The default is
+ * `spawn`. A caller that must keep ownership of these processes after their command ends (the helper,
+ * which tracks each process group from launch) supplies its own; it must return the started child.
+ */
+export type ProcessLauncher = (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
+
 export interface GitRunnerConfig {
   gitPath?: string;
+  /** Starts each Git process. Default `spawn`. */
+  launch?: ProcessLauncher;
   /** Directory used as core.hooksPath; it must stay empty so no hook can run. */
   hooksDir: string;
   /** Environment passed through after the scrub on every call (tests use it to isolate global config). */
@@ -103,6 +112,7 @@ export interface GitRunnerConfig {
 
 export function createGitRunner(config: GitRunnerConfig): GitRunner {
   const gitPath = config.gitPath ?? "git";
+  const launch: ProcessLauncher = config.launch ?? spawn;
   const prefix = [
     "-c", `core.hooksPath=${config.hooksDir}`,
     "-c", "core.fsmonitor=false",
@@ -127,9 +137,9 @@ export function createGitRunner(config: GitRunnerConfig): GitRunner {
         return;
       }
       const useGroup = process.platform !== "win32";
-      let child: ReturnType<typeof spawn>;
+      let child: ChildProcess;
       try {
-        child = spawn(gitPath, [...prefix, ...args], {
+        child = launch(gitPath, [...prefix, ...args], {
           cwd: options.cwd,
           env: { ...scrubbedEnv(process.env, { ...config.env, ...options.env }), ...ENFORCED_ENV },
           stdio: ["pipe", "pipe", "pipe"],
@@ -200,6 +210,8 @@ export function createGitRunner(config: GitRunnerConfig): GitRunner {
         }
         resolve({ code: stopped ? 0 : code ?? -1, stdout: Buffer.concat(chunks), stderr: redact(stderr) });
       });
+      // A launcher can run code that cancels before it returns; that abort event is not repeated for the listener above.
+      if (options.signal?.aborted) onAbort();
       if (options.input) child.stdin!.end(Buffer.from(options.input));
       else child.stdin!.end();
     });

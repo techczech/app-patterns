@@ -7,7 +7,7 @@
   "description": "Automatic backup engine for Git-versioned document folders: private-index snapshots, per-checkout backup branches, push and remote verification, and a persistent protection deadline.",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "build:js": "bun build ./src/index.ts --root ./src --outdir dist --target node --format esm --packages external",
+    "build:js": "bun build ./src/index.ts ./src/helper/index.ts --root ./src --outdir dist --target node --format esm --packages external",
     "build:types": "tsc -p tsconfig.build.json",
     "build": "bun run build:js && bun run build:types",
     "test": "bun test",
@@ -18,6 +18,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./helper": {
+      "types": "./dist/helper/index.d.ts",
+      "import": "./dist/helper/index.js",
+      "default": "./dist/helper/index.js"
     }
   },
   "files": [

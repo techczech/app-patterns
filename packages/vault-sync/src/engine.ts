@@ -45,7 +45,7 @@ import { defaultMountInfo, isCloudSyncedLocation, isNetworkMount, type MountInfo
 import { collectPushBlobs, createGitleaksScanner, describeFindings, type NotScannedBlob, type SecretFinding, type SecretScanner, type SecretScanResult } from "./secret-scan.ts";
 import { applyPushed, applyVerified, noteEdit as noteEditInRecord, noteFlush as noteFlushInRecord, noteWriteStart as noteWriteStartInRecord, protectionAgeSeconds, withBlock, withError, type BackupErrorRecord, type DeadlineRecord, type EditTicket, type WriteToken, type FlushAcknowledgement, type SnapshotCoverage } from "./deadline.ts";
 import { checkoutId as readCheckoutId, engineFolder, ensureEngineFolder, loadRecord, saveRecord, withFolderLock } from "./engine-store.ts";
-import { createGitRunner, type GitRunner } from "./git-process.ts";
+import { createGitRunner, type GitRunner, type ProcessLauncher } from "./git-process.ts";
 import { createRestoreApi, type RestoreApi } from "./restore.ts";
 import { lsRemoteAt, pushIn, withTransport, type ObjectStore, type TransportContext } from "./transport.ts";
 import type { BackupScope } from "./scope.ts";
@@ -97,6 +97,11 @@ export interface BackupEngineOptions {
   visibilityRecheckMs?: number;
   /** Secret scanner run before each push. Default runs gitleaks. */
   secretScanner?: SecretScanner;
+  /**
+   * Starts every Git process and the default scanner's process. Default `spawn`. It changes only how a
+   * process is started and tracked, never what runs: the arguments, environment and limits are the engine's.
+   */
+  launch?: ProcessLauncher;
   /** Blobs above this size are not scanned. Default 10 MiB. */
   maxScanBlobBytes?: number;
   /** A push whose chain's blobs together exceed this is held back as too large to scan. Default 512 MiB. */
@@ -216,11 +221,11 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
   const mountInfo = options.mountInfo ?? defaultMountInfo(platform);
   const remoteVisibility = options.remoteVisibility ?? (async (): Promise<RemoteVisibility> => "unknown");
   const visibilityRecheckMs = options.visibilityRecheckMs ?? 10 * 60_000;
-  const secretScanner = options.secretScanner ?? createGitleaksScanner();
+  const secretScanner = options.secretScanner ?? createGitleaksScanner({ launch: options.launch });
   const maxScanBlobBytes = options.maxScanBlobBytes ?? 10 * 1024 * 1024;
   const maxScanTotalBytes = options.maxScanTotalBytes ?? 512 * 1024 * 1024;
   const credentialHelpers = [...(options.trustedCredentialHelpers ?? [])];
-  const runner = (hooksDir: string) => createGitRunner({ gitPath: options.gitPath, hooksDir, env: options.gitEnv, credentialHelpers });
+  const runner = (hooksDir: string) => createGitRunner({ gitPath: options.gitPath, hooksDir, env: options.gitEnv, credentialHelpers, launch: options.launch });
 
   const contexts = new Map<string, Promise<RepoContext>>();
   const queues = new Map<string, Promise<unknown>>();
