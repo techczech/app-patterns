@@ -119,6 +119,12 @@ export interface DeadlineRecord {
   convertedFrom?: number | "damaged";
   /** Why the last push was held back (visibility, secret scan, remote set-up); cleared by the next successful push. */
   lastBlock?: BackupBlock | null;
+  /**
+   * Why the last capture was held back because its projection could not give a complete cohort
+   * ("history-unavailable"). Separate from push blocks: a push, a verification or an enable of an older
+   * snapshot never clears it; only a later capture with a complete cohort does (capture.ts).
+   */
+  captureBlock?: BackupBlock | null;
   /** Editor receipt ledger (receipt-ledger.ts); a ledger of another version is kept opaque. */
   receipts?: ReceiptLedger | OpaqueLedger;
 }
@@ -474,6 +480,17 @@ function verifyReceipts(record: DeadlineRecord, seq: number, at: number): Receip
   return ledger;
 }
 
+/** A capture held back by its projection: records why, beside (never instead of) any push block. */
+export function withCaptureBlock(record: DeadlineRecord, block: BackupBlock): DeadlineRecord {
+  return { ...record, captureBlock: block };
+}
+
+/** A complete cohort was captured: the projection's condition is over. Unchanged when there was none. */
+export function withoutCaptureBlock(record: DeadlineRecord): DeadlineRecord {
+  if (record.captureBlock === undefined) return record;
+  return { ...record, captureBlock: null };
+}
+
 /** A held-back push: records why, and leaves every deadline field as it was. */
 export function withBlock(record: DeadlineRecord, block: BackupBlock): DeadlineRecord {
   return { ...record, lastBlock: block };
@@ -485,6 +502,23 @@ export function withError(record: DeadlineRecord, error: BackupErrorRecord): Dea
 
 const isNum = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
 const obj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
+
+/** Longest stored capture-block message kept as it is. */
+const CAPTURE_BLOCK_MESSAGE_LIMIT = 2000;
+const CAPTURE_BLOCK_UNREADABLE = "the record of why the last capture was held back could not be read, so its history is taken as unavailable until a capture with a complete cohort";
+
+/**
+ * The stored `captureBlock` as status and capture may use it, checked before any use: absent or null as it
+ * is (older records); a valid history-unavailable block kept (reason, time, bounded message); anything else
+ * (another or a future reason, a missing or oversized message, a bad time, an array, a string) becomes the
+ * canonical history-unavailable block, never nothing: damaged capture health is never read as healthy.
+ */
+export function checkedCaptureBlock(value: unknown): BackupBlock | null | undefined {
+  if (value === undefined || value === null) return value;
+  const at = obj(value) && isNum(value.at) && value.at >= 0 ? value.at : 0;
+  if (obj(value) && value.reason === "history-unavailable" && at === value.at && typeof value.message === "string" && value.message.length > 0 && value.message.length <= CAPTURE_BLOCK_MESSAGE_LIMIT) return { reason: "history-unavailable", at, message: value.message };
+  return { reason: "history-unavailable", at, message: CAPTURE_BLOCK_UNREADABLE };
+}
 
 /** Every finite edit time an older (or partly readable) record names; missing fields are skipped. */
 function knownEditTimes(v: Record<string, unknown>): number[] {
@@ -557,6 +591,8 @@ export function convertedRecord(value: unknown, lastWritten: number, now: number
     recoveredFromDamagedRecord: true,
     convertedFrom: schema,
     receipts: ledger,
+    // Capture health is kept through a conversion (checked like any stored one).
+    ...(v.captureBlock !== undefined && v.captureBlock !== null ? { captureBlock: checkedCaptureBlock(v.captureBlock) } : {}),
   };
   return withOldest(record);
 }
@@ -652,5 +688,7 @@ function parseLegacy(value: unknown): DeadlineRecord | null {
   // Tickets and acknowledgements can never be ahead of the counter that handed them out.
   const gen = v.generation as number;
   if ((v.unflushed as UnflushedEdits[]).some((u) => u.last > gen) || (v.flushed as FlushedEdit[]).some((f) => f.ackGen > gen) || Object.values(v.writes as Record<string, WriteMark>).some((w) => w.gen > gen)) return null;
+  // The one stored field status interprets as a block is checked here; the others stay as they were.
+  if (v.captureBlock !== undefined && v.captureBlock !== null) return { ...(value as unknown as DeadlineRecord), captureBlock: checkedCaptureBlock(v.captureBlock) };
   return value as unknown as DeadlineRecord;
 }

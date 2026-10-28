@@ -13,3 +13,5 @@ export type { ReceiptsApi } from "./engine-receipts.ts";
 export { RECEIPT_ENGINE_LEVEL, RECEIPT_LOCK_WAIT_MS, type DocRef, type HelperIncarnation, type ReceiptLimits, type ReceiptResult, type RefusalCode, type WriterIncarnation } from "./receipt-ledger.ts";
 export type { ActivationAttestation, GoneWriterProof, ListView, OpenStreamRequest, OpenStreamResult, ReceiptError, ReceiptErrorCode, ReceiptSession, SeqRequest, StreamIdentity } from "./receipt-transitions.ts";
 export type { Agg, DocProofView, ReceiptStatusView, WantedDoc } from "./receipt-status.ts";
+export type { CaptureProjection, ProjectedFile, ProjectionRead } from "./projection.ts";
+export { urlDigest } from "./enablement.ts";

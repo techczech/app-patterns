@@ -15,6 +15,8 @@
  *   together are above the total limit.
  * - unsupported-history: the checkout's backup branch holds commits this engine did not make (for
  *   example a chain from an older version with the repository's history as a parent); see chain.ts.
+ * - history-unavailable: a required capture projection (projection.ts) could not give a complete,
+ *   checked cohort; the capture is held back whole and nothing new is credited.
  *
  * A refusal never writes Git objects or refs and never moves the protection deadline.
  */
@@ -30,7 +32,8 @@ export type BlockReason =
   | "secret-found"
   | "scanner-unavailable"
   | "too-large-to-scan"
-  | "unsupported-history";
+  | "unsupported-history"
+  | "history-unavailable";
 
 export interface BackupBlock {
   reason: BlockReason;

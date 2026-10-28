@@ -34,9 +34,10 @@
  * in-process work that ignores cancellation is the command line's job (see containment.ts), not this
  * module's.
  *
- * Remote visibility: a local folder or file:// remote is answered "private" (it publishes nothing beyond
- * this machine); every other address is "unknown", so the engine holds its pushes back until a later stage
- * supplies a real visibility check and credentials.
+ * Remote visibility: by default a local folder or file:// remote is answered "private" (it publishes
+ * nothing beyond this machine) and every other address is "unknown", so the engine holds its pushes back.
+ * A version 2 configuration run from the command line supplies the GitHub check, credential helper and
+ * trusted programs per vault instead (production.ts).
  */
 import { createServer, type Server, type Socket } from "node:net";
 import type { Stats } from "node:fs";
@@ -57,7 +58,7 @@ import { createWorkTracker, type ReceiptVault } from "./receipt-session.ts";
 import { assertSameFolder, prepareRuntimeFolder, removeOwnSocket, removeStaleSocket, type OwnSocketRemoval } from "./runtime-dir.ts";
 import { createVaultWorker, systemClock, systemTimers, type Clock, type Timers, type VaultWorker } from "./vault-worker.ts";
 
-export const HELPER_VERSION = "0.2.0";
+export const HELPER_VERSION = "0.4.0";
 /** Upper bound on one foreground run; the spike never runs open-ended. */
 export const MAX_RUNTIME_MS = 6 * 60 * 60_000;
 /** Upper bound on the grace period and on the time cancelled work is given to end. */
@@ -138,8 +139,14 @@ export interface StartHelperOptions {
   timers?: Timers;
   pollMs?: number;
   statusTimeoutMs?: number;
-  /** Test seam: extra engine options (for example permissive guards over disposable fixtures). The CLI passes none. */
+  /**
+   * Engine options every vault shares. Tests pass permissive guards over disposable fixtures; the command
+   * line passes the configured Git program for a version 2 configuration (production.ts). Its `gitPath`
+   * and `gitEnv` also apply to the owner-lock lookups at start.
+   */
   engineOptions?: Partial<BackupEngineOptions>;
+  /** Per-vault engine options, applied after `engineOptions` (production.ts: scanner, credential helper, visibility). */
+  vaultEngineOptions?: (vault: RegisteredVault) => Partial<BackupEngineOptions>;
   /**
    * Records and starts every native process of this helper. Default: a new registry. The command line
    * passes its own so that it can contain those processes whatever happens to the start.
@@ -212,8 +219,8 @@ export class HelperStartError extends Error {
 }
 
 /** Folder of a vault's helper-owner lock and its deadline record, read from Git without writing anything. */
-async function vaultOwnerLock(path: string, gitEnv: Record<string, string> | undefined, launch: ProcessLauncher): Promise<{ dir: string; recordFile: string }> {
-  const git = createGitRunner({ hooksDir: devNull, env: gitEnv, launch });
+async function vaultOwnerLock(path: string, gitEnv: Record<string, string> | undefined, launch: ProcessLauncher, gitPath?: string): Promise<{ dir: string; recordFile: string }> {
+  const git = createGitRunner({ hooksDir: devNull, env: gitEnv, launch, ...(gitPath ? { gitPath } : {}) });
   const gitDir = (await git.ok(["rev-parse", "--absolute-git-dir"], { cwd: path, timeoutMs: 30_000, maxOutputBytes: 64 * 1024 })).toString("utf8").trim();
   if (!gitDir) throw new Error("could not read the vault's git folder");
   const folder = engineFolder(gitDir);
@@ -401,7 +408,7 @@ export async function startHelper(options: StartHelperOptions): Promise<HelperHa
   };
 
   // Every lookup ends (and leaves no process behind) before a failure is reported; no claim is held yet.
-  const lookups = await Promise.allSettled(config.vaults.map(async (v) => ({ id: v.id, ...(await vaultOwnerLock(v.path, options.engineOptions?.gitEnv, processes.launch)) })));
+  const lookups = await Promise.allSettled(config.vaults.map(async (v) => ({ id: v.id, ...(await vaultOwnerLock(v.path, options.engineOptions?.gitEnv, processes.launch, options.engineOptions?.gitPath)) })));
   const failed = lookups.find((l) => l.status === "rejected");
   if (failed) return refuse(failed.reason);
   const vaultLocks = lookups.map((l) => (l as PromiseFulfilledResult<{ id: string; dir: string; recordFile: string }>).value);
@@ -533,7 +540,7 @@ export async function startHelper(options: StartHelperOptions): Promise<HelperHa
     try {
       await removeStaleSocket(paths);
       for (const vault of config.vaults) {
-        const engineOptions: BackupEngineOptions = { remoteVisibility: localVisibility, ...options.engineOptions, launch: processes.launch, machineId: config.machineId, remote: vault.remote };
+        const engineOptions: BackupEngineOptions = { remoteVisibility: localVisibility, ...options.engineOptions, ...options.vaultEngineOptions?.(vault), launch: processes.launch, machineId: config.machineId, remote: vault.remote };
         const engine = options.createEngine ? options.createEngine(vault, engineOptions) : createBackupEngine(engineOptions);
         const recordFile = vaultLocks.find((l) => l.id === vault.id)?.recordFile ?? null;
         receiptVaults.set(vault.id, { vault, scope: compileScope(vault.scope), receipts: engine.receipts ?? null, recordFile });

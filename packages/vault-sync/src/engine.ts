@@ -48,7 +48,7 @@ import { checkDestination, type Destination } from "./destination.ts";
 import { readEnablement, removeEnablement, urlDigest, writeEnablement, type EnablementRecord } from "./enablement.ts";
 import { defaultMountInfo, isCloudSyncedLocation, isNetworkMount, type MountInfoReader } from "./location.ts";
 import { collectPushBlobs, createGitleaksScanner, describeFindings, type NotScannedBlob, type SecretFinding, type SecretScanner, type SecretScanResult } from "./secret-scan.ts";
-import { applyPushed, applyVerified, noteEdit as noteEditInRecord, noteFlush as noteFlushInRecord, noteWriteStart as noteWriteStartInRecord, protectionAgeSeconds, withBlock, withError, type BackupErrorRecord, type DeadlineRecord, type EditTicket, type WriteToken, type FlushAcknowledgement, type SnapshotCoverage } from "./deadline.ts";
+import { applyPushed, applyVerified, noteEdit as noteEditInRecord, noteFlush as noteFlushInRecord, noteWriteStart as noteWriteStartInRecord, protectionAgeSeconds, withBlock, withCaptureBlock, withError, type BackupErrorRecord, type DeadlineRecord, type EditTicket, type WriteToken, type FlushAcknowledgement, type SnapshotCoverage } from "./deadline.ts";
 import { createReceiptsApi, type ReceiptsApi } from "./engine-receipts.ts";
 import { checkoutId as readCheckoutId, engineFolder, ensureEngineFolder, loadRecord, saveRecord, withFolderLock } from "./engine-store.ts";
 import { createGitRunner, type GitRunner, type ProcessLauncher } from "./git-process.ts";
@@ -56,6 +56,7 @@ import { createRestoreApi, type RestoreApi } from "./restore.ts";
 import { ledgerUnflushedSince, recordSafety } from "./receipt-ledger.ts";
 import { lsRemoteAt, pushIn, withTransport, type ObjectStore, type TransportContext } from "./transport.ts";
 import type { BackupScope } from "./scope.ts";
+import type { CaptureProjection } from "./projection.ts";
 
 export type { CaptureResult, PendingFile, SkippedFile } from "./capture.ts";
 
@@ -113,6 +114,13 @@ export interface BackupEngineOptions {
   maxScanBlobBytes?: number;
   /** A push whose chain's blobs together exceed this is held back as too large to scan. Default 512 MiB. */
   maxScanTotalBytes?: number;
+  /**
+   * Optional trusted cohort every capture inserts as one unit (projection.ts). Absent: capture is
+   * unchanged. A host passes one only from its own trusted code, never from configuration.
+   */
+  historyProjection?: CaptureProjection;
+  /** One projection attempt's budget in milliseconds (default projection.ts PROJECTION_BUDGET_MS). */
+  projectionBudgetMs?: number;
 }
 
 export type RemoteVisibility = "private" | "public" | "unknown";
@@ -122,6 +130,11 @@ export interface EnableOptions {
   remote?: string;
   /** Confirms that backup branches may be published to a public remote. */
   visibilityConfirmedPublic?: boolean;
+  /**
+   * The destination digest (enablement.ts urlDigest) of the address the user was shown. When given, enable
+   * refuses unless the address it validates now, and would pin, has exactly this digest.
+   */
+  expectedDestinationDigest?: string;
 }
 
 export interface EnableResult {
@@ -471,7 +484,8 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
     await persist(ctx, (record) => withError(record, { kind, at: now(), message: message.slice(0, 2000) }));
   }
 
-  const captureDeps: CaptureDeps = { machineId, now, settleMs, retries, maxFileBytes, author, run: local, readRecord, persist };
+  // A projected cohort shares the push scan's total limit: everything it emits is scanned before a push.
+  const captureDeps: CaptureDeps = { machineId, now, settleMs, retries, maxFileBytes, author, run: local, readRecord, persist, ...(options.historyProjection ? { projection: options.historyProjection, maxProjectedTotalBytes: maxScanTotalBytes, ...(options.projectionBudgetMs ? { projectionBudgetMs: options.projectionBudgetMs } : {}) } : {}) };
   const latest = (ctx: RepoContext, signal?: AbortSignal) => latestSnapshot(ctx, local(ctx, signal));
 
   async function hooksNotRun(ctx: RepoContext): Promise<string[]> {
@@ -549,6 +563,8 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
       const name = opts.remote ?? remote;
       if (!REMOTE_NAME.test(name)) throw new Error("remote must be the name of a configured remote");
       const confirmed = opts.visibilityConfirmedPublic === true;
+      const expected = opts.expectedDestinationDigest;
+      if (expected !== undefined && (typeof expected !== "string" || !/^[0-9a-f]{64}$/.test(expected))) throw new Error("expectedDestinationDigest must be a SHA-256 digest in lower-case hex");
       const ctx = await context(real);
       return exclusive(ctx, async (): Promise<EnableResult> => {
         const found = await destinationOf(ctx.git, ctx.root, name);
@@ -557,6 +573,8 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
           throw new Error(`remote ${name} is not configured in this repository`);
         }
         const digest = urlDigest(found.destination.url);
+        // The address pinned below is this one; it must be the one the user was shown.
+        if (expected !== undefined && digest !== expected) throw new BackupRefusedError(block("enablement-stale", "the backup remote's address is not the one shown when backup was turned on; check it again"));
         const seen = await checkVisibility(ctx, digest, found.destination.url, true);
         if (seen === "public" && !confirmed) throw new BackupRefusedError(visibilityBlock(seen, false)!);
         await writeEnablement(ctx.folder.enablementFile, {
@@ -591,7 +609,8 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
         try {
           return await captureWithRetry(ctx, scope, captureDeps, opts.signal);
         } catch (error) {
-          if (error instanceof BackupRefusedError) await persist(ctx, (r) => withBlock(r, error.block)).catch(() => undefined);
+          // The projection's condition is the capture's own health, kept apart from push blocks (S2).
+          if (error instanceof BackupRefusedError) await persist(ctx, (r) => (error.block.reason === "history-unavailable" ? withCaptureBlock(r, error.block) : withBlock(r, error.block))).catch(() => undefined);
           else await recordError(ctx, "capture-failed", (error as Error).message).catch(() => undefined);
           throw error;
         }
@@ -735,7 +754,8 @@ export function createBackupEngine(options: BackupEngineOptions): BackupEngine {
           const cached = visibility.get(ctx.folder.dir);
           if (cached && cached.digest === state.enabled.record.pushUrlDigest) held = visibilityBlock(cached.value, state.enabled.record.visibilityConfirmedPublic);
         }
-        held ??= record.lastBlock ?? null;
+        // A capture held back by its projection stays shown until a complete cohort is captured.
+        held ??= record.captureBlock ?? record.lastBlock ?? null;
         return {
           machineId,
           checkoutId: ctx.checkoutId,

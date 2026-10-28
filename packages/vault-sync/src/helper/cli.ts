@@ -5,10 +5,22 @@
  *                             [--shutdown-grace-ms <ms>] [--hard-stop-ms <ms>]
  *   bun src/helper/cli.ts status --runtime-dir <folder> [--vault <id>]
  *   bun src/helper/cli.ts sync-now --runtime-dir <folder> --vault <id>
+ *   bun src/helper/cli.ts preview --config <file> --vault <id>
+ *   bun src/helper/cli.ts enable --config <file> --vault <id> [--confirm-public] [--expected-destination <sha256>]
+ *   bun src/helper/cli.ts disable --config <file> --vault <id>
+ *
+ * The packaged entry is `dist/helper/bin.js`, the same commands for Node (an app runs it as a separate
+ * process, for example Electron with ELECTRON_RUN_AS_NODE=1); nothing of this file runs inside an app.
  *
  * `run` stays in the foreground until Ctrl-C, SIGTERM, SIGHUP or the required runtime bound, then stops.
  * Events are written to stderr as JSON lines; answers to `status` and `sync-now` go to stdout as JSON.
- * There is deliberately no install, enable, register or shutdown-over-socket command.
+ * With a version 2 configuration (config.ts) it first checks the configured Git and gitleaks programs
+ * (tools.ts; a refusal is exit 2) and runs every vault with the production options (production.ts):
+ * those programs only, the configured credential helper only, and the GitHub visibility check.
+ * There is deliberately no install, register or shutdown-over-socket command. `preview`, `enable` and
+ * `disable` are one-shot commands for one vault of a version 2 configuration (enrol.ts), answered on
+ * stdout as JSON: an app runs them only when its user turns backup on or off for that vault; `enable` exits
+ * 1 when it refused.
  *
  * How `run` ends (exit code):
  * - 0: every cycle ended within grace + hard stop, every process the helper started is gone, the socket is
@@ -28,17 +40,29 @@
  * as the start completes); later ones are reported and ignored, so a second Ctrl-C cannot cut the order short.
  * The bound is the command's: grace + hard stop + the time containment needs, unless the process's own
  * event loop is blocked, in which case only an outside SIGKILL ends it.
+ *
+ * Extensions (`HelperExtensions`): a host's own helper entry may call `main`/`runCli` with trusted history
+ * projections by name (production.ts). They come from that entry's code, never from configuration or
+ * arguments. The generic entry (bin.ts) has none, so a vault that requires one is refused by every
+ * command: `run` exits 2 before anything starts, `preview` reports the refusal and `enable` refuses.
  */
 import { writeSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { loadHelperConfig } from "./config.ts";
 import { connectHelper } from "./client.ts";
+import { disableVault, enableVault, previewVault } from "./enrol.ts";
+import { productionSharedOptions, productionVaultOptions, requiredProjection, resolveProductionConfig, type ProductionSeams } from "./production.ts";
 import { sweepSync, type ContainmentResult } from "./containment.ts";
 import { createProcessRegistry, type ProcessRegistry } from "./process-registry.ts";
 import { runtimeSocketPath } from "./runtime-dir.ts";
 import { HelperStartError, ShutdownError, startHelper, type HelperHandle, type StopResult } from "./server.ts";
 
-const USAGE = "usage: cli.ts run --config <file> --runtime-dir <folder> --max-runtime-ms <ms> [--shutdown-grace-ms <ms>] [--hard-stop-ms <ms>] | status --runtime-dir <folder> [--vault <id>] | sync-now --runtime-dir <folder> --vault <id>";
+const USAGE = "usage: cli.ts run --config <file> --runtime-dir <folder> --max-runtime-ms <ms> [--shutdown-grace-ms <ms>] [--hard-stop-ms <ms>] | status --runtime-dir <folder> [--vault <id>] | sync-now --runtime-dir <folder> --vault <id> | preview|disable --config <file> --vault <id> | enable --config <file> --vault <id> [--confirm-public] [--expected-destination <sha256>]";
+
+/** What a host's own helper entry adds to the generic commands: trusted projections by name. */
+export interface HelperExtensions {
+  projections?: ProductionSeams["projections"];
+}
 export const EXIT_FORCED = 3;
 /** Containment passes come this often at first, while killed children are being reaped... */
 const FAST_PASS_MS = 20;
@@ -193,7 +217,8 @@ export async function runForeground(handle: HelperHandle, options: ForegroundOpt
   }
 }
 
-export async function main(argv: string[], options: ForegroundOptions = {}): Promise<number> {
+export async function main(argv: string[], options: ForegroundOptions = {}, extensions: HelperExtensions = {}): Promise<number> {
+  const projections = extensions.projections;
   const [command, ...rest] = argv;
   const { values } = parseArgs({
     args: rest,
@@ -206,14 +231,31 @@ export async function main(argv: string[], options: ForegroundOptions = {}): Pro
       "hard-stop-ms": { type: "string" },
       vault: { type: "string" },
       "timeout-ms": { type: "string" },
+      "confirm-public": { type: "boolean" },
+      "expected-destination": { type: "string" },
     },
   });
+  if (command === "preview" || command === "enable" || command === "disable") {
+    if (!values.config || !values.vault) throw new Error(USAGE);
+    const config = await loadHelperConfig(values.config);
+    const deps = projections ? { projections } : {};
+    const expected = values["expected-destination"];
+    const answer = command === "preview" ? await previewVault(config, values.vault, deps)
+      : command === "enable" ? await enableVault(config, values.vault, { confirmPublic: values["confirm-public"] === true, ...(expected !== undefined ? { expectedDestinationDigest: expected } : {}) }, deps)
+        : await disableVault(config, values.vault, deps);
+    process.stdout.write(`${JSON.stringify(answer, null, 2)}\n`);
+    return command === "enable" && !(answer as { enabled: boolean }).enabled ? 1 : 0;
+  }
   const runtimeDir = values["runtime-dir"];
   if (!runtimeDir) throw new Error(USAGE);
   const event = eventWriter(options);
   if (command === "run") {
     if (!values.config || !values["max-runtime-ms"]) throw new Error(USAGE);
-    const config = await loadHelperConfig(values.config);
+    // A version 2 configuration runs only with the trusted programs and credential helper it names, as
+    // their checked real paths; a refusal is exit 2.
+    const config = await resolveProductionConfig(await loadHelperConfig(values.config));
+    // A vault whose required history this entry cannot project never starts as documents only.
+    for (const vault of config.vaults) requiredProjection(vault, projections);
     const processes = createProcessRegistry();
     // From here until the run has ended, a signal can only ask for a stop.
     const guard = guardSignals(event);
@@ -227,6 +269,7 @@ export async function main(argv: string[], options: ForegroundOptions = {}): Pro
           shutdownGraceMs: values["shutdown-grace-ms"] === undefined ? undefined : Number(values["shutdown-grace-ms"]),
           hardStopMs: values["hard-stop-ms"] === undefined ? undefined : Number(values["hard-stop-ms"]),
           processes,
+          ...(config.tools ? { engineOptions: productionSharedOptions(config)!, vaultEngineOptions: (vault) => productionVaultOptions(config, vault, processes.launch, projections ? { projections } : {}) } : {}),
           onEvent: (e) => event(e),
         });
       } catch (error) {
@@ -257,8 +300,9 @@ export async function main(argv: string[], options: ForegroundOptions = {}): Pro
   throw new Error(USAGE);
 }
 
-if (import.meta.main) {
-  main(process.argv.slice(2)).then(
+/** Runs one command and exits with its code; an error is reported on stderr and exits 2. */
+export function runCli(argv: string[], extensions: HelperExtensions = {}): void {
+  main(argv, {}, extensions).then(
     (code) => process.exit(code),
     (error) => {
       process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
@@ -266,3 +310,6 @@ if (import.meta.main) {
     },
   );
 }
+
+// Only when Bun runs this source file itself; the packaged entry is bin.ts.
+if (import.meta.main && import.meta.url.endsWith("/cli.ts")) runCli(process.argv.slice(2));

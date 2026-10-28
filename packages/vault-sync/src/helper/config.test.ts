@@ -35,7 +35,8 @@ describe("helper configuration", () => {
     await expect(parseHelperConfig(base("relative/vault"))).rejects.toThrow("absolute");
     await expect(parseHelperConfig({ ...base(vault), discover: true })).rejects.toThrow("unexpected field");
     await expect(parseHelperConfig(base(vault, { command: "rm" }))).rejects.toThrow("unexpected field");
-    await expect(parseHelperConfig({ ...base(vault), configVersion: 2 })).rejects.toThrow("configVersion");
+    await expect(parseHelperConfig({ ...base(vault), configVersion: 3 })).rejects.toThrow("configVersion");
+    await expect(parseHelperConfig({ ...base(vault), configVersion: 2 })).rejects.toThrow("tools");
     await expect(parseHelperConfig({ ...base(vault), vaults: [] })).rejects.toThrow("vaults");
     await expect(parseHelperConfig(base(vault, { include: [] }))).rejects.toThrow("include");
     await expect(parseHelperConfig(base(vault, { remote: "--upload-pack=x" }))).rejects.toThrow("remote");

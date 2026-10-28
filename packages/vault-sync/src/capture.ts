@@ -14,6 +14,15 @@
  * the record is quarantined (its write guards could not be recovered) or holds a ledger of another version.
  * The record read after the files, and the one the capture settles into, must carry the same stamp;
  * otherwise the whole attempt is discarded before any snapshot credit.
+ *
+ * Projection (projection.ts, optional): a host's trusted cohort enters the same private index as one
+ * unit. It is read and checked after the ordinary reads and absence checks but BEFORE the final record
+ * read, so the write-generation, active-mark and safety checks below cover the projection's whole wait
+ * as well. Its namespaces are outside the ordinary removal pass; an unavailable cohort (or one that
+ * misses its engine-owned budget) refuses the whole capture ("history-unavailable"), so the previous
+ * snapshot stays as it was. That condition is the record's capture block; only a later capture with a
+ * complete cohort clears it, never a push or a verification of an older snapshot. Without a projection
+ * nothing here changes.
  */
 import { createHash } from "node:crypto";
 import { lstat, rm } from "node:fs/promises";
@@ -22,7 +31,7 @@ import { setTimeout as wait } from "node:timers/promises";
 import { backupRef, latestDayRef } from "./backup-ref.ts";
 import { BackupRefusedError } from "./blocks.ts";
 import { chainProblem, recordRoot } from "./chain.ts";
-import { applyCapture, coverageOfCapture, markPending, type CaptureOutcome, type DeadlineRecord } from "./deadline.ts";
+import { applyCapture, coverageOfCapture, markPending, withoutCaptureBlock, type CaptureOutcome, type DeadlineRecord } from "./deadline.ts";
 import { RecordUnsafeError, type EngineFolder } from "./engine-store.ts";
 import { splitNul, type GitRunner, type GitRunOptions } from "./git-process.ts";
 import { own } from "./path-map.ts";
@@ -30,6 +39,7 @@ import { recordSafety, stampBroken } from "./receipt-ledger.ts";
 import { compileScope, listScope, underAny, type BackupScope, type SkippedPath } from "./scope.ts";
 import { formatSnapshotMessage } from "./snapshot-message.ts";
 import { checkContainment, readStable, statKey, type GitFileMode } from "./stable-read.ts";
+import { checkedNamespaces, inNamespace, ordinaryScopeTest, projectionAttempt, PROJECTION_BUDGET_MS, type CaptureProjection, type ProjectedFile } from "./projection.ts";
 
 export interface PendingFile {
   path: string;
@@ -59,6 +69,8 @@ export interface CaptureResult {
   pending: PendingFile[];
   /** Paths not captured because they lie beyond a symlinked directory. */
   skipped: SkippedFile[];
+  /** With a projection only: how its cohort changed the snapshot. Never part of added/modified/removed. */
+  projected?: { files: number; bytes: number; added: string[]; modified: string[]; removed: string[] };
 }
 
 export interface RepoContext {
@@ -89,6 +101,12 @@ export interface CaptureDeps {
   run(ctx: RepoContext, signal?: AbortSignal, env?: Record<string, string>): GitRunOptions;
   readRecord(ctx: RepoContext): Promise<DeadlineRecord>;
   persist(ctx: RepoContext, change: (record: DeadlineRecord) => DeadlineRecord): Promise<DeadlineRecord>;
+  /** Optional trusted cohort (projection.ts). Absent: capture is exactly as without it. */
+  projection?: CaptureProjection;
+  /** One projection attempt's budget (default PROJECTION_BUDGET_MS); a retry pass also stays inside its own. */
+  projectionBudgetMs?: number;
+  /** All projected bytes of one cohort together (default PROJECTED_TOTAL_LIMIT). */
+  maxProjectedTotalBytes?: number;
 }
 
 const CACHE_MIN_AGE_MS = 2000;
@@ -181,6 +199,10 @@ async function capturePass(ctx: RepoContext, scope: BackupScope, deps: CaptureDe
 
   const { files, skipped, unreadable, listed: listedFolders } = await listScope(ctx.root, compiled);
   checkReadBudget();
+  const projection = deps.projection;
+  const namespaces = projection ? checkedNamespaces(projection.namespaces) : [];
+  const historyRefused = (message: string) => new BackupRefusedError({ reason: "history-unavailable", at: now(), message: `${projection!.name}: ${message}; this capture is held back so no partial history is backed up` });
+  if (projection && files.some((path) => inNamespace(path, namespaces))) throw historyRefused("an ordinary file in scope lies in the projection's own namespace");
   const listed = new Set(files);
   const result: CaptureResult = { committed: false, snapshot: previous?.oid ?? null, ref: previous?.ref ?? null, startedAt, added: [], modified: [], removed: [], pending: [], skipped: [...skipped] };
   const read = new Map<string, { oid: string; mode: GitFileMode; content: Buffer | null }>();
@@ -260,6 +282,8 @@ async function capturePass(ctx: RepoContext, scope: BackupScope, deps: CaptureDe
   for (const path of absentCandidates) {
     checkReadBudget();
     if (listed.has(path)) continue;
+    // The projection's complete cohort decides its own paths; they are never probed here.
+    if (projection && inNamespace(path, namespaces)) continue;
     // Persisted records are not path authority. Never probe outside the root or an excluded ancestor.
     const parts = path.split("/");
     if (!path || path.startsWith("/") || path.includes("\0") || parts.some((p) => p === "" || p === "." || p === "..")) continue;
@@ -295,8 +319,22 @@ async function capturePass(ctx: RepoContext, scope: BackupScope, deps: CaptureDe
     }
     if (prevEntries.has(path) && !pendingSet.has(path)) removals.add(path);
   }
-  // Check generations after both reads and absence checks: a write that completed during either
-  // invalidates that proof, even when the clock is equal or rolled back and it is no longer active.
+  // The projection's wait comes before the final record read, never after it: no earlier generation
+  // check may vouch for ordinary bytes across this interval.
+  let cohort: ProjectedFile[] | null = null;
+  if (projection) {
+    checkReadBudget();
+    const budgetMs = Math.min(deps.projectionBudgetMs ?? PROJECTION_BUDGET_MS, readDeadline - performance.now());
+    // The host's read and the cohort check are one admitted attempt under one budget (projection.ts).
+    const checked = await projectionAttempt(projection, ctx.root, namespaces, { maxFileBytes, ...(deps.maxProjectedTotalBytes ? { maxTotalBytes: deps.maxProjectedTotalBytes } : {}) }, ordinaryScopeTest(compiled), { signal, budgetMs });
+    // A retry pass whose own budget ended keeps the earlier pass's result; it records no history block.
+    checkReadBudget();
+    if ("unavailable" in checked) throw historyRefused(checked.unavailable);
+    cohort = checked.files;
+  }
+  // Check generations after the reads, the absence checks and the projection: a write that completed
+  // during any of them invalidates that proof, even when the clock is equal or rolled back and it is no
+  // longer active.
   const record = await readRecord(ctx);
   const broken = stampBroken(stamp, record);
   if (broken) throw new RecordUnsafeError(broken);
@@ -340,10 +378,32 @@ async function capturePass(ctx: RepoContext, scope: BackupScope, deps: CaptureDe
   }
   for (const folder of [...unlisted].sort()) result.pending.push({ path: folder === "" ? "." : folder, reason: "unlisted" });
 
+  // The ordinary reads decide whether an edit was seen; projected metadata never does.
+  const sawChange = updates.length > 0;
+  if (cohort) {
+    const projected = { files: cohort.length, bytes: 0, added: [] as string[], modified: [] as string[], removed: [] as string[] };
+    const kept = new Set<string>();
+    for (const file of cohort) {
+      kept.add(file.path);
+      projected.bytes += file.content.length;
+      const oid = blobOid(ctx, file.content);
+      const was = prevEntries.get(file.path);
+      if (was && was.oid === oid && was.mode === "100644") continue;
+      if (!was || was.oid !== oid) writes.push({ oid, content: file.content });
+      (was ? projected.modified : projected.added).push(file.path);
+      updates.push(`100644 ${oid}\t${file.path}\0`);
+    }
+    // The complete selection removes what it no longer holds; earlier snapshots keep it (immutable ancestry).
+    for (const path of prevEntries.keys()) {
+      if (!inNamespace(path, namespaces) || kept.has(path)) continue;
+      projected.removed.push(path);
+      updates.push(`0 ${ctx.zeroOid}\t${path}\0`);
+    }
+    result.projected = projected;
+  }
   // No retry may start writing objects/refs after its read budget expires. Once admitted here,
   // finish the existing commit/record transaction without a budget abort between those writes.
   checkReadBudget();
-  const sawChange = updates.length > 0;
   let tree: string | null = null;
   let prevTree: string | null = null;
   // Exact absence needs a real snapshot to push and verify even before any file was captured.
@@ -398,13 +458,15 @@ async function capturePass(ctx: RepoContext, scope: BackupScope, deps: CaptureDe
     result.snapshot = commit;
     result.ref = ref;
   }
+  // A complete cohort was captured (changed or not): the history condition is over.
+  const healthy = (r: DeadlineRecord): DeadlineRecord => (cohort ? withoutCaptureBlock(r) : r);
   if (result.snapshot && result.ref) {
     const snapshot = result.snapshot;
     const snapshotRef = result.ref;
-    await persist(ctx, (r) => applyCapture(settleable(stamp, r), { ...outcome, snapshot, ref: snapshotRef }).record);
+    await persist(ctx, (r) => healthy(applyCapture(settleable(stamp, r), { ...outcome, snapshot, ref: snapshotRef }).record));
   } else {
     // No snapshot exists yet: keep the pending marks (and their floors) for the next capture.
-    await persist(ctx, (r) => markPending(settleable(stamp, r), outcome));
+    await persist(ctx, (r) => healthy(markPending(settleable(stamp, r), outcome)));
   }
   return result;
 }
