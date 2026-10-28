@@ -1,5 +1,9 @@
 # Changelog
 
+## Settings Electron 0.4.3 — 2026-10-28
+
+- Settings Electron: the Electron peer range adds the exact release 44.9.1 (`>=30 <43 || 44.7.2 || 44.9.1`), the 44.x release that fixes GHSA-jr5w-w6x2-84p9. The host's code is unchanged; the opt-in compatibility check now verifies the official declaration files of both 44.7.2 and 44.9.1. The packed 0.4.2 file stays in `releases/` unchanged.
+
 ## Settings 0.4.2 — 2026-10-25
 
 - Settings: on Windows, a folder fsync refused with EPERM after the settings file has been renamed into place no longer reports the save as failed. Windows opens a folder but refuses to flush it; the file itself is still fsynced before the rename and its identity checked after it. On other systems EPERM from a folder fsync is still an error, and EIO or any other folder fsync failure still reports the save unwritten on every system. Only `@app-patterns/settings` changes; the packed 0.4.1 file stays in `releases/` unchanged.

@@ -605,9 +605,9 @@ test('view declares a legacy update checker only when the host installed one', a
 });
 
 
-test("Electron peer compatibility admits the tested 44.7.2 exactly alongside the existing range", () => {
+test("Electron peer compatibility admits the tested 44.7.2 and 44.9.1 exactly alongside the existing range", () => {
   const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   const range = manifest.peerDependencies.electron;
-  for (const version of ["30.0.0", "42.9.9", "44.7.2"]) expect(Bun.semver.satisfies(version, range), version).toBe(true);
-  for (const version of ["29.9.9", "43.0.0", "44.7.1", "44.7.3", "44.8.0", "45.0.0"]) expect(Bun.semver.satisfies(version, range), version).toBe(false);
+  for (const version of ["30.0.0", "42.9.9", "44.7.2", "44.9.1"]) expect(Bun.semver.satisfies(version, range), version).toBe(true);
+  for (const version of ["29.9.9", "43.0.0", "44.7.1", "44.7.3", "44.8.0", "44.9.0", "44.9.2", "44.10.0", "45.0.0"]) expect(Bun.semver.satisfies(version, range), version).toBe(false);
 });
