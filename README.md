@@ -4,7 +4,7 @@ Shared patterns for desktop apps, written in TypeScript. One command registry dr
 
 ## Packages
 
-- [`@app-patterns/commands`](packages/commands/README.md) defines the command registry, key chords, dispatch and menu templates.
+- [`@app-patterns/commands`](packages/commands/README.md) defines the command registry, key chords, dispatch and menu templates. Its [keyboard safety pattern](packages/commands/README.md#keyboard-safety-and-text-entry) explains text-entry ownership, native macOS menu accelerators and regression verification.
 - [`@app-patterns/settings`](packages/settings/README.md) provides the settings schema, history, undo, transfer, file store and agent CLI.
 - [`@app-patterns/settings-react`](packages/settings-react/README.md) renders the Settings window from props and supplies its stylesheet.
 - [`@app-patterns/settings-electron`](packages/settings-electron/README.md) connects the settings store, window, menus, preload bridge and encrypted key slots in Electron.
