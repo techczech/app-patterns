@@ -1,0 +1,118 @@
+$ bun run scripts/release-pack.mjs
+==> building all packages from clean dist/ (bun run build)
+$ bun run scripts/run-workspaces.mjs build
+
+==> @app-patterns/commands (build)
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts --outdir dist --target node --format esm --packages external
+Bundled 6 modules in 2ms
+
+  index.js  16.31 KB  (entry point)
+
+$ tsc -p tsconfig.build.json
+
+==> @app-patterns/outline (build)
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts --outdir dist --target browser --format esm --packages external
+Bundled 3 modules in 2ms
+
+  index.js  33.31 KB  (entry point)
+
+$ tsc -p tsconfig.build.json
+
+==> @app-patterns/settings (build)
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/node/index.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+Bundled 18 modules in 3ms
+
+  index.js            3.1 KB    (entry point)
+  index-tveshzgx.js   45.1 KB   (chunk)
+  node/index.js       56.88 KB  (entry point)
+
+$ tsc -p tsconfig.build.json
+
+==> @app-patterns/updates (build)
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/electron.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+Bundled 6 modules in 2ms
+
+  index.js           17.29 KB  (entry point)
+  index-1b6na6es.js  5.80 KB   (chunk)
+  electron.js        3.0 KB    (entry point)
+
+$ tsc -p tsconfig.build.json
+
+==> @app-patterns/updates-react (build)
+$ bun run build:deps && bun run build:js && bun run build:css
+$ bun run --cwd ../updates build
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/electron.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+Bundled 6 modules in 2ms
+
+  index.js           17.29 KB  (entry point)
+  index-1b6na6es.js  5.80 KB   (chunk)
+  electron.js        3.0 KB    (entry point)
+
+$ tsc -p tsconfig.build.json
+$ tsc -p tsconfig.build.json
+$ mkdir -p dist && cp src/updates.css dist/updates.css
+
+==> @app-patterns/settings-react (build)
+$ bun run gen:css && bun run build:deps && bun run build:js && bun run build:css
+$ bun run scripts/gen-css.ts
+$ bun run --cwd ../commands build && bun run --cwd ../settings build && bun run --cwd ../updates-react build
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts --outdir dist --target node --format esm --packages external
+Bundled 6 modules in 2ms
+
+  index.js  16.31 KB  (entry point)
+
+$ tsc -p tsconfig.build.json
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/node/index.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+Bundled 18 modules in 7ms
+
+  index.js            3.1 KB    (entry point)
+  index-tveshzgx.js   45.1 KB   (chunk)
+  node/index.js       56.88 KB  (entry point)
+
+$ tsc -p tsconfig.build.json
+$ bun run build:deps && bun run build:js && bun run build:css
+$ bun run --cwd ../updates build
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/electron.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+Bundled 6 modules in 2ms
+
+  index.js           17.29 KB  (entry point)
+  index-1b6na6es.js  5.80 KB   (chunk)
+  electron.js        3.0 KB    (entry point)
+
+$ tsc -p tsconfig.build.json
+$ tsc -p tsconfig.build.json
+$ mkdir -p dist && cp src/updates.css dist/updates.css
+$ tsc -p tsconfig.build.json
+$ bun run scripts/gen-css.ts --dist
+
+==> @app-patterns/settings-electron (build)
+$ bun run build:js && bun run build:types
+$ bun build ./src/index.ts ./src/main.ts ./src/preload.ts --root ./src --outdir dist --target node --format esm --packages external --splitting
+Bundled 8 modules in 3ms
+
+  index.js           0.62 KB    (entry point)
+  index-68dt72tk.js  28.58 KB   (chunk)
+  index-bcmrghf9.js  2.55 KB    (chunk)
+  main.js            1.38 KB    (entry point)
+  preload.js         348 bytes  (entry point)
+
+$ tsc -p tsconfig.build.json
+
+==> releases
+  app-patterns-commands-0.4.3.tgz              15.3 KB    10 files  unchanged, kept
+  app-patterns-outline-0.4.1.tgz                9.0 KB     8 files  unchanged, kept
+  app-patterns-settings-0.4.2.tgz              57.0 KB    24 files  unchanged, kept
+  app-patterns-updates-0.4.1.tgz               14.2 KB    11 files  unchanged, kept
+  app-patterns-updates-react-0.4.1.tgz          7.0 KB    11 files  unchanged, kept
+  app-patterns-settings-react-0.4.3.tgz        48.4 KB    38 files  packed
+  app-patterns-settings-electron-0.4.4.tgz     21.6 KB    17 files  packed
+
+Wrote releases/manifest.json

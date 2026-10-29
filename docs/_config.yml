@@ -1,0 +1,5 @@
+title: App Patterns Framework
+description: TypeScript packages for desktop commands, settings, update notices and Markdown outlines.
+theme: jekyll-theme-cayman
+url: https://techczech.github.io
+baseurl: /app-patterns

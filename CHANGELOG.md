@@ -1,5 +1,13 @@
 # Changelog
 
+## Framework 0.4.4 — 2026-10-29
+
+- Ships the keyboard safety and text-entry integration documentation added after commands 0.4.2 was packed. Compiled command files are unchanged. The version advances because README contents are part of the immutable archive.
+- The framework release assembles the settings 0.4.2, settings-react 0.4.3 and settings-electron 0.4.4 with outline, updates and updates-react 0.4.1. Package versions remain independent.
+- Settings React and Settings Electron advance patch versions because Bun resolves workspace development dependencies into their packed metadata. Their compiled files are unchanged. Existing archives remain immutable.
+- Adds a GitHub Pages project page and release/install guidance.
+
+
 ## Settings Electron 0.4.3 — 2026-10-28
 
 - Settings Electron: the Electron peer range adds the exact release 44.9.1 (`>=30 <43 || 44.7.2 || 44.9.1`), the 44.x release that fixes GHSA-jr5w-w6x2-84p9. The host's code is unchanged; the opt-in compatibility check now verifies the official declaration files of both 44.7.2 and 44.9.1. The packed 0.4.2 file stays in `releases/` unchanged.

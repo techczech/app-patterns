@@ -7,7 +7,7 @@
     },
     "packages/commands": {
       "name": "@app-patterns/commands",
-      "version": "0.4.2",
+      "version": "0.4.3",
       "devDependencies": {
         "@types/bun": "^1.3.14",
         "typescript": "6.0.3",
@@ -38,7 +38,7 @@
     },
     "packages/settings-electron": {
       "name": "@app-patterns/settings-electron",
-      "version": "0.4.3",
+      "version": "0.4.4",
       "devDependencies": {
         "@app-patterns/commands": "workspace:*",
         "@app-patterns/settings": "workspace:*",
@@ -61,7 +61,7 @@
     },
     "packages/settings-react": {
       "name": "@app-patterns/settings-react",
-      "version": "0.4.2",
+      "version": "0.4.3",
       "devDependencies": {
         "@app-patterns/commands": "workspace:*",
         "@app-patterns/settings": "workspace:*",

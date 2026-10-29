@@ -2,14 +2,14 @@
   "schema": 1,
   "packages": {
     "@app-patterns/commands": {
-      "version": "0.4.2",
-      "file": "app-patterns-commands-0.4.2.tgz",
-      "integrity": "sha512-YX37tpms9MN8YSfvZRjIY4NAGIoTjIs4iQWGMyqUA5I1NgyoGci1lv5VLro9V6xsHUqHnG8+6WvvnkT9HsZjlg==",
-      "contentsDigest": "sha256-A3kGpWiw/52fXXnWO3S2YYc0bLmbVVhhxfeAqbtTY6s=",
+      "version": "0.4.3",
+      "file": "app-patterns-commands-0.4.3.tgz",
+      "integrity": "sha512-li7l/abIiNAG8T+Uobmb9h58n8fVJn/S0VMCHLV5NdhpAlIuIp42WxfrMcOv87b/yZms9Gq13kXrFUmfEm2CaQ==",
+      "contentsDigest": "sha256-mg4YCC4R/YO9eepD7tsXDfC2wAAd+gfr2ydhmfpMJkQ=",
       "frameworkPeers": {},
-      "commit": "f31633ebaa1f65cc4b38400bc1e5090688430bbf",
-      "commitDirty": false,
-      "packedAt": "2026-10-23T13:22:03.520Z"
+      "commit": "dff2798c8a50c6a40f7bf94459cb3ee2713a53d3",
+      "commitDirty": true,
+      "packedAt": "2026-10-29T17:05:33.230Z"
     },
     "@app-patterns/outline": {
       "version": "0.4.1",
@@ -32,27 +32,27 @@
       "packedAt": "2026-10-25T11:45:11.126Z"
     },
     "@app-patterns/settings-electron": {
-      "version": "0.4.3",
-      "file": "app-patterns-settings-electron-0.4.3.tgz",
-      "integrity": "sha512-4Gm/+RdGzXdmT2BJcAnGuER/yty4Qovag7jbR+dp+IrRMnCXjliFAyzIA0syCmrEJRExSKSEsGkJqixabGU7+A==",
-      "contentsDigest": "sha256-ZFTaJ6tVb35tOgbRhYj6jTNMb2XaRQgXG0MIr/pNQ5A=",
+      "version": "0.4.4",
+      "file": "app-patterns-settings-electron-0.4.4.tgz",
+      "integrity": "sha512-kpsTzdLAP5UcoutgpqnqzgaLHEnZ/k8h886MHJ+9XrhwtbJ3s6V/KYYidrhLRUS5VWECrUP8Bwk1IKs141NYxw==",
+      "contentsDigest": "sha256-ODJceoxSEdZSLpCRuY2RT1Nj9MuQRAyloAOXBPcZW08=",
       "frameworkPeers": {},
-      "commit": "1cae8073ba512d129ed6f424ecf85038add43330",
-      "commitDirty": false,
-      "packedAt": "2026-10-28T04:59:25.352Z"
+      "commit": "dff2798c8a50c6a40f7bf94459cb3ee2713a53d3",
+      "commitDirty": true,
+      "packedAt": "2026-10-29T17:05:33.325Z"
     },
     "@app-patterns/settings-react": {
-      "version": "0.4.2",
-      "file": "app-patterns-settings-react-0.4.2.tgz",
-      "integrity": "sha512-Thtu5CHUrI4RCKKNx76iuWfg9SWXrWav12uFvXjq3Hg60olRFTaEtzjyCnD9POUJOWjZuJrcCxVPevxiOi1Zog==",
-      "contentsDigest": "sha256-bbqyyg0VSTmFBo5ohN/ceijBglliZZJLI+IIeowA4c4=",
+      "version": "0.4.3",
+      "file": "app-patterns-settings-react-0.4.3.tgz",
+      "integrity": "sha512-FywgEqkbLgGsiPYz3iwsyTi/Ixf8QCkiyt3eTidjRMPem01gdrEKMfhlzXG4xxvN9q8OC2kf2aTxMbUrCf7eqA==",
+      "contentsDigest": "sha256-ZrIO63wktAJltB8Q+7hanwY363LtfHB1UJffcVM91LQ=",
       "frameworkPeers": {
         "@app-patterns/commands": "^0.4.2",
         "@app-patterns/settings": "^0.4.1"
       },
-      "commit": "f31633ebaa1f65cc4b38400bc1e5090688430bbf",
-      "commitDirty": false,
-      "packedAt": "2026-10-23T13:22:03.612Z"
+      "commit": "dff2798c8a50c6a40f7bf94459cb3ee2713a53d3",
+      "commitDirty": true,
+      "packedAt": "2026-10-29T17:05:33.309Z"
     },
     "@app-patterns/updates": {
       "version": "0.4.1",
@@ -113,6 +113,15 @@
       "commit": "f31633ebaa1f65cc4b38400bc1e5090688430bbf",
       "commitDirty": false,
       "packedAt": "2026-10-23T13:22:03.520Z"
+    },
+    "app-patterns-commands-0.4.3.tgz": {
+      "name": "@app-patterns/commands",
+      "version": "0.4.3",
+      "integrity": "sha512-li7l/abIiNAG8T+Uobmb9h58n8fVJn/S0VMCHLV5NdhpAlIuIp42WxfrMcOv87b/yZms9Gq13kXrFUmfEm2CaQ==",
+      "contentsDigest": "sha256-mg4YCC4R/YO9eepD7tsXDfC2wAAd+gfr2ydhmfpMJkQ=",
+      "commit": "dff2798c8a50c6a40f7bf94459cb3ee2713a53d3",
+      "commitDirty": true,
+      "packedAt": "2026-10-29T17:05:33.230Z"
     },
     "app-patterns-outline-0.3.0.tgz": {
       "name": "@app-patterns/outline",
@@ -222,6 +231,15 @@
       "commitDirty": false,
       "packedAt": "2026-10-28T04:59:25.352Z"
     },
+    "app-patterns-settings-electron-0.4.4.tgz": {
+      "name": "@app-patterns/settings-electron",
+      "version": "0.4.4",
+      "integrity": "sha512-kpsTzdLAP5UcoutgpqnqzgaLHEnZ/k8h886MHJ+9XrhwtbJ3s6V/KYYidrhLRUS5VWECrUP8Bwk1IKs141NYxw==",
+      "contentsDigest": "sha256-ODJceoxSEdZSLpCRuY2RT1Nj9MuQRAyloAOXBPcZW08=",
+      "commit": "dff2798c8a50c6a40f7bf94459cb3ee2713a53d3",
+      "commitDirty": true,
+      "packedAt": "2026-10-29T17:05:33.325Z"
+    },
     "app-patterns-settings-react-0.3.0.tgz": {
       "name": "@app-patterns/settings-react",
       "version": "0.3.0",
@@ -257,6 +275,15 @@
       "commit": "f31633ebaa1f65cc4b38400bc1e5090688430bbf",
       "commitDirty": false,
       "packedAt": "2026-10-23T13:22:03.612Z"
+    },
+    "app-patterns-settings-react-0.4.3.tgz": {
+      "name": "@app-patterns/settings-react",
+      "version": "0.4.3",
+      "integrity": "sha512-FywgEqkbLgGsiPYz3iwsyTi/Ixf8QCkiyt3eTidjRMPem01gdrEKMfhlzXG4xxvN9q8OC2kf2aTxMbUrCf7eqA==",
+      "contentsDigest": "sha256-ZrIO63wktAJltB8Q+7hanwY363LtfHB1UJffcVM91LQ=",
+      "commit": "dff2798c8a50c6a40f7bf94459cb3ee2713a53d3",
+      "commitDirty": true,
+      "packedAt": "2026-10-29T17:05:33.309Z"
     },
     "app-patterns-updates-0.4.0.tgz": {
       "name": "@app-patterns/updates",

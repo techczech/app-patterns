@@ -2,6 +2,8 @@
 
 Shared patterns for desktop apps, written in TypeScript. One command registry drives the command palette, menus and keyboard shortcuts. A shared Settings window provides schema-driven controls, a changelog, undo, export and import, and a headless CLI for agents. Markdown outline commands support section selection and movement in CodeMirror.
 
+[Project page](https://techczech.github.io/app-patterns/) · [GitHub releases](https://github.com/techczech/app-patterns/releases) · [Release notes](docs/release-app-patterns-0.4.4.md)
+
 ## Packages
 
 - [`@app-patterns/commands`](packages/commands/README.md) defines the command registry, key chords, dispatch and menu templates. Its [keyboard safety pattern](packages/commands/README.md#keyboard-safety-and-text-entry) explains text-entry ownership, native macOS menu accelerators and regression verification.
@@ -12,7 +14,7 @@ Shared patterns for desktop apps, written in TypeScript. One command registry dr
 - [`@app-patterns/updates-react`](packages/updates-react/README.md) provides quiet status marks, the release popover and the About and updates card.
 - `@app-patterns/outline` provides Markdown outline ranges and CodeMirror commands.
 
-`@app-patterns/commands` and `@app-patterns/settings-react` are version 0.4.2, `@app-patterns/settings-electron` is version 0.4.3; the other packages remain at 0.4.1. The React components require React and lucide-react; the Electron host requires Electron. See each package manifest for supported peer versions.
+`@app-patterns/commands` and `@app-patterns/settings-react` are version 0.4.3; `@app-patterns/settings-electron` is version 0.4.4 and `@app-patterns/settings` is version 0.4.2. Outline and the two update packages remain at 0.4.1. The React components require React and lucide-react; the Electron host requires Electron. See each package manifest for supported peer versions.
 
 ## Install with vendored tarballs
 
@@ -24,7 +26,7 @@ bun run check
 bun run release:pack
 ```
 
-In your app, declare the packages you need in `package.json`, for example `"@app-patterns/settings-react": "^0.4.1"`. Commit that declaration before vendoring. From this repository, preview and then apply the dependency changes:
+In your app, declare the packages you need in `package.json`, for example `"@app-patterns/settings-react": "^0.4.2"`. Commit that declaration before vendoring. From this repository, preview and then apply the dependency changes:
 
 ```sh
 bun run release:vendor /path/to/your-app
@@ -33,7 +35,11 @@ bun run release:vendor /path/to/your-app --write
 
 The tool copies the required tarballs into the app's `vendor/app-patterns/`, adds sibling peers and root overrides, and replaces dependency ranges with relative `file:` tarball paths. It leaves peer ranges intact. It refuses dirty app manifests or vendor files. It never runs an install or changes Git state in the app.
 
+After vendoring, copy this release’s root `LICENSE` to your app’s `vendor/app-patterns/LICENSE` and commit it with the archives. Retain this MIT notice in your distributed app’s licence notices. The vendor tool copies archives, not this notice; the unchanged update archives do not contain it.
+
 In the app, run `bun install` and `bun install --frozen-lockfile`, then run its checks. Commit `package.json`, `bun.lock` and `vendor/app-patterns/` together. When migrating from live folder dependencies, remove the old `node_modules` and lockfile before reinstalling.
+
+Packages are distributed as release assets, not through npm. For a published snapshot, download the seven tarballs and `manifest.json` from the same GitHub release into this checkout's `releases/` directory before running `release:vendor`. Use the matching source tag for the tooling. The root workspace and packages deliberately retain `private: true` to prevent accidental registry publication.
 
 Each released version is immutable. Change the package version before packing changed contents. Commit `releases/manifest.json` in this repository; generated tarballs are ignored. See [the vendored tarball decision](docs/adr/0001-apps-consume-versioned-vendored-tarballs.md).
 

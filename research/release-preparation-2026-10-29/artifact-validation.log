@@ -1,0 +1,7 @@
+@app-patterns/commands: integrity, contents, exports and forbidden-content checks passed
+@app-patterns/outline: integrity, contents, exports and forbidden-content checks passed
+@app-patterns/settings: integrity, contents, exports and forbidden-content checks passed
+@app-patterns/settings-electron: integrity, contents, exports and forbidden-content checks passed
+@app-patterns/settings-react: integrity, contents, exports and forbidden-content checks passed
+@app-patterns/updates: integrity, contents, exports and forbidden-content checks passed
+@app-patterns/updates-react: integrity, contents, exports and forbidden-content checks passed

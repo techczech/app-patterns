@@ -1,0 +1,13 @@
+{
+  "html_url": "https://github.com/techczech/app-patterns",
+  "visibility": "public",
+  "default_branch": "main",
+  "has_pages": false,
+  "license": {
+    "key": "mit",
+    "name": "MIT License",
+    "spdx_id": "MIT",
+    "url": "https://api.github.com/licenses/mit",
+    "node_id": "MDc6TGljZW5zZTEz"
+  }
+}

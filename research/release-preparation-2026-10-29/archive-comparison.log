@@ -1,0 +1,3 @@
+commands: changed entries versus 0.4.2: package/README.md, package/package.json; dist bytes identical.
+settings-react: changed entries versus 0.4.2: package/package.json; dist bytes identical.
+settings-electron: changed entries versus 0.4.3: package/package.json; dist bytes identical.
