@@ -2,6 +2,8 @@
 
 Shared patterns for desktop apps, written in TypeScript. One command registry drives the command palette, menus and keyboard shortcuts. A shared Settings window provides schema-driven controls, a changelog, undo, export and import, and a headless CLI for agents. Markdown outline commands support section selection and movement in CodeMirror.
 
+![App Patterns component examples: settings, search, keyboard shortcuts and change history](https://raw.githubusercontent.com/techczech/app-patterns/dc93de6/docs/visuals/app-patterns-examples/collage-app-patterns-examples.png)
+
 ## Packages
 
 - [`@app-patterns/commands`](packages/commands/README.md) defines the command registry, key chords, dispatch and menu templates.
