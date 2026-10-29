@@ -13,8 +13,9 @@ Shared patterns for desktop apps, written in TypeScript. One command registry dr
 - [`@app-patterns/updates`](packages/updates/README.md) provides release-feed validation, version comparison, daily checking, skip and snooze state, seen notes and a bounded Electron fetcher.
 - [`@app-patterns/updates-react`](packages/updates-react/README.md) provides quiet status marks, the release popover and the About and updates card.
 - `@app-patterns/outline` provides Markdown outline ranges and CodeMirror commands.
+- [`@app-patterns/vault-files`](packages/vault-files/README.md) provides guarded writes, external-change detection, a file watcher, cloud conflict-copy handling, folder availability and the vault marker file.
 
-All packages are version 0.4.1. The React components require React and lucide-react; the Electron host requires Electron. See each package manifest for supported peer versions.
+The vault-files package is version 0.4.2; the other packages are version 0.4.1. The React components require React and lucide-react; the Electron host requires Electron. See each package manifest for supported peer versions.
 
 ## Install with vendored tarballs
 
