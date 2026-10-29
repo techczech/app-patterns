@@ -91,3 +91,16 @@ Not covered by the spike: installation as a login service, behaviour across a re
 ## Tests
 
 `bun test` in this folder runs the engine against local bare remotes in temporary folders.
+
+### Trusted host credentials (0.5.0)
+
+A version 2 GitHub vault may require `credentialMode: "host"` and a positive numeric
+`repositoryId` within `github`. The generic entry refuses this mode. A trusted host
+entry supplies `hostCredentials(vault, launch)` through `helper/host`; its returned
+launcher must delegate to that exact owning registry. It supplies the same credential
+source to preview and push visibility checks, which verify the numeric ID and name.
+Host Git calls use repository paths and refuse HTTP redirects. Configuration cannot
+contain helper shell fragments or load code. Legacy configurations retain their
+existing credential-helper behaviour. A host may supply an abort signal and a shorter
+runtime bound; lifetime cancellation seals admission, stops foreground work and
+contains one-shot native children before returning.

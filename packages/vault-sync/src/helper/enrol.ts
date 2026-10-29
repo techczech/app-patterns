@@ -38,7 +38,7 @@ import { defaultMountInfo, isCloudSyncedLocation, isNetworkMount } from "../loca
 import { compileScope, listScope } from "../scope.ts";
 import type { HelperConfig, RegisteredVault } from "./config.ts";
 import { githubRepositoryOf, githubVisibilityCheck, gitCredentialSource, type GitHubUnknownReason } from "./github-visibility.ts";
-import { HistoryProjectionMissingError, productionVaultOptions, requiredProjection, type ProductionSeams } from "./production.ts";
+import { HistoryProjectionMissingError, productionVaultOptions, requiredHostCredentials, requiredProjection, type ProductionSeams } from "./production.ts";
 import { checkTool, ToolRefusedError, trustedCredentialHelper, type ToolCheck } from "./tools.ts";
 
 const LISTED_LIMIT = 2_000;
@@ -129,7 +129,6 @@ function engineFor(config: HelperConfig, vault: RegisteredVault, deps: EnrolDeps
     machineId: config.machineId,
     remote: vault.remote,
     ...productionVaultOptions(config, vault, deps.launch, deps),
-    ...(deps.launch ? { launch: deps.launch } : {}),
     ...(deps.mountInfo ? { mountInfo: deps.mountInfo } : {}),
     ...(deps.homeDir ? { homeDir: deps.homeDir } : {}),
   });
@@ -153,6 +152,7 @@ function resolved(config: HelperConfig, git: string, gitleaks: string, helper: {
 
 export async function previewVault(config: HelperConfig, id: string, deps: EnrolDeps = {}): Promise<VaultPreview> {
   const vault = vaultOf(config, id);
+  const host = requiredHostCredentials(vault, deps.launch, deps.hostCredentials);
   const tools = { git: await tool("git", config.tools!.git), gitleaks: await tool("gitleaks", config.tools!.gitleaks) };
   const helper = "error" in tools.git ? null : await helperOf(config, tools.git.path);
   const running = "error" in tools.git || "error" in tools.gitleaks ? config : resolved(config, tools.git.path, tools.gitleaks.path, helper);
@@ -221,11 +221,11 @@ export async function previewVault(config: HelperConfig, id: string, deps: Enrol
       preview.visibility = "private";
       preview.visibilityReason = "local-remote";
     } else if (preview.remote.kind === "github") {
-      if (!config.credentialHelper && !deps.credential) preview.visibilityReason = "no-credential-helper";
-      else if (!deps.credential && !(helper && "path" in helper)) preview.visibilityReason = "untrusted-credential-helper";
+      if (!host && !config.credentialHelper && !deps.credential) preview.visibilityReason = "no-credential-helper";
+      else if (!host && !deps.credential && !(helper && "path" in helper)) preview.visibilityReason = "untrusted-credential-helper";
       else {
-        const credential = deps.credential ?? gitCredentialSource({ gitPath: tools.git.path, helper: (helper as { path: string }).path, ...(deps.launch ? { launch: deps.launch } : {}) });
-        const answer = await githubVisibilityCheck({ repository: preview.remote.repository, credential, ...(deps.fetch ? { fetch: deps.fetch } : {}) })(url);
+        const credential = host?.credential ?? deps.credential ?? gitCredentialSource({ gitPath: tools.git.path, helper: (helper as { path: string }).path, ...(deps.launch ? { launch: deps.launch } : {}) });
+        const answer = await githubVisibilityCheck({ repository: vault.github?.repository ?? preview.remote.repository, repositoryId: vault.github?.repositoryId, signal: host?.signal, credential, ...(deps.fetch ? { fetch: deps.fetch } : {}) })(url);
         preview.visibility = answer.visibility;
         preview.visibilityReason = answer.visibility === "unknown" ? answer.reason : null;
       }
@@ -256,7 +256,7 @@ export async function previewVault(config: HelperConfig, id: string, deps: Enrol
   preview.skipped = listing.skipped.map((s) => s.path);
   preview.unreadable = listing.unreadable;
   try {
-    const status = await engineFor(running, preview.remote.kind === "github" ? { ...vault, github: { repository: preview.remote.repository } } : vault, deps).status(real);
+    const status = await engineFor(running, preview.remote.kind === "github" ? { ...vault, github: vault.github ?? { repository: preview.remote.repository } } : vault, deps).status(real);
     preview.enabled = status.enabled;
     if (status.block && status.block.reason === "unsupported-history") preview.publication.block = { reason: status.block.reason, message: status.block.message };
   } catch {

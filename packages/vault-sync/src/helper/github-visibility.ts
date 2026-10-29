@@ -152,6 +152,8 @@ export function gitCredentialSource(options: GitCredentialOptions): CredentialSo
 export interface GitHubVisibilityOptions {
   /** The repository the vault's remote must be (`owner/name`). */
   repository: string;
+  repositoryId?: number;
+  signal?: AbortSignal;
   credential: CredentialSource;
   fetch?: typeof fetch;
   timeoutMs?: number;
@@ -209,6 +211,7 @@ export function githubVisibilityCheck(options: GitHubVisibilityOptions): (remote
   const expected = options.repository.toLowerCase();
   const unknown = (reason: GitHubUnknownReason): GitHubVisibilityAnswer => ({ visibility: "unknown", reason });
   return async (remoteUrl) => {
+    if (options.signal?.aborted) return unknown("no-credential");
     const remote = githubRemoteOf(remoteUrl);
     if (!remote) return unknown("not-github-address");
     const { repository } = remote;
@@ -219,13 +222,13 @@ export function githubVisibilityCheck(options: GitHubVisibilityOptions): (remote
     } catch {
       token = null;
     }
-    if (!token) return unknown("no-credential");
+    if (!token || options.signal?.aborted) return unknown("no-credential");
     let response: Response;
     try {
       response = await doFetch(`${GITHUB_API}/repos/${repository}`, {
         method: "GET",
         redirect: "manual",
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
         headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "vault-sync-helper" },
       });
     } catch {
@@ -245,7 +248,8 @@ export function githubVisibilityCheck(options: GitHubVisibilityOptions): (remote
       if (declared > MAX_RESPONSE_BYTES) return refuse("unexpected-answer");
       const bytes = await readCapped(response, MAX_RESPONSE_BYTES);
       if (bytes === null) return unknown("unexpected-answer");
-      const body = JSON.parse(new TextDecoder().decode(bytes)) as { full_name?: unknown; private?: unknown; visibility?: unknown };
+      const body = JSON.parse(new TextDecoder().decode(bytes)) as { id?: unknown; full_name?: unknown; private?: unknown; visibility?: unknown };
+      if (options.signal?.aborted || (options.repositoryId !== undefined && body.id !== options.repositoryId)) return unknown("unexpected-answer");
       if (typeof body.full_name !== "string" || body.full_name.toLowerCase() !== expected || typeof body.private !== "boolean") return unknown("unexpected-answer");
       if (body.visibility !== undefined) {
         const agrees = body.private ? body.visibility === "private" || body.visibility === "internal" : body.visibility === "public";

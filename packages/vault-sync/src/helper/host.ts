@@ -8,3 +8,6 @@ export { main, runCli, type HelperExtensions } from "./cli.ts";
 export { HistoryProjectionMissingError, type ProjectionFactory } from "./production.ts";
 export type { RegisteredVault } from "./config.ts";
 export { checkedNamespaces, inNamespace, ordinaryScopeTest, plainGitPath, type CaptureProjection, type ProjectedFile, type ProjectionRead } from "../projection.ts";
+
+export type { HostCredentialFactory } from "./production.ts";
+export type { ProcessLauncher } from "../git-process.ts";

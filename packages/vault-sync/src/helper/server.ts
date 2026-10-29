@@ -1,3 +1,4 @@
+import { productionVaultOptions, type HostCredentialFactory, type ProductionSeams } from "./production.ts";
 /**
  * Foreground backup helper: one owner per runtime folder, one worker per registered vault, a local socket
  * for `status` and `syncNow`, and a bounded lifetime.
@@ -58,7 +59,7 @@ import { createWorkTracker, type ReceiptVault } from "./receipt-session.ts";
 import { assertSameFolder, prepareRuntimeFolder, removeOwnSocket, removeStaleSocket, type OwnSocketRemoval } from "./runtime-dir.ts";
 import { createVaultWorker, systemClock, systemTimers, type Clock, type Timers, type VaultWorker } from "./vault-worker.ts";
 
-export const HELPER_VERSION = "0.4.0";
+export const HELPER_VERSION = "0.5.0";
 /** Upper bound on one foreground run; the spike never runs open-ended. */
 export const MAX_RUNTIME_MS = 6 * 60 * 60_000;
 /** Upper bound on the grace period and on the time cancelled work is given to end. */
@@ -146,6 +147,8 @@ export interface StartHelperOptions {
    */
   engineOptions?: Partial<BackupEngineOptions>;
   /** Per-vault engine options, applied after `engineOptions` (production.ts: scanner, credential helper, visibility). */
+  hostCredentials?: HostCredentialFactory;
+  projections?: ProductionSeams["projections"];
   vaultEngineOptions?: (vault: RegisteredVault) => Partial<BackupEngineOptions>;
   /**
    * Records and starts every native process of this helper. Default: a new registry. The command line
@@ -540,7 +543,7 @@ export async function startHelper(options: StartHelperOptions): Promise<HelperHa
     try {
       await removeStaleSocket(paths);
       for (const vault of config.vaults) {
-        const engineOptions: BackupEngineOptions = { remoteVisibility: localVisibility, ...options.engineOptions, ...options.vaultEngineOptions?.(vault), launch: processes.launch, machineId: config.machineId, remote: vault.remote };
+        const engineOptions: BackupEngineOptions = { remoteVisibility: localVisibility, ...options.engineOptions, ...options.vaultEngineOptions?.(vault), launch: processes.launch, ...(vault.github?.credentialMode === "host" ? productionVaultOptions(config, vault, processes.launch, { hostCredentials: options.hostCredentials, projections: options.projections }) : {}), machineId: config.machineId, remote: vault.remote };
         const engine = options.createEngine ? options.createEngine(vault, engineOptions) : createBackupEngine(engineOptions);
         const recordFile = vaultLocks.find((l) => l.id === vault.id)?.recordFile ?? null;
         receiptVaults.set(vault.id, { vault, scope: compileScope(vault.scope), receipts: engine.receipts ?? null, recordFile });

@@ -48,7 +48,22 @@ export async function resolveProductionConfig(config: HelperConfig, uid?: number
   return { ...config, tools: { git, gitleaks }, ...(credentialHelper ? { credentialHelper } : {}) };
 }
 
+/** Trusted entry code only. The returned launcher must delegate to this supplied owning registry. */
+export type HostCredentialFactory = (vault: RegisteredVault, launch: ProcessLauncher) => {
+  credential: CredentialSource;
+  launch: ProcessLauncher;
+  helpers: readonly string[];
+  /** Cancels visibility work as well as native work when the host lifetime ends. */
+  signal?: AbortSignal;
+};
+export function requiredHostCredentials(vault: RegisteredVault, launch: ProcessLauncher | undefined, factory?: HostCredentialFactory): ReturnType<HostCredentialFactory> | undefined {
+  if (vault.github?.credentialMode !== "host") return undefined;
+  if (!factory || !launch || !Number.isSafeInteger(vault.github.repositoryId) || vault.github.repositoryId! <= 0) throw new Error("this vault requires host credentials and a numeric repository ID");
+  return factory(vault, launch);
+}
+
 export interface ProductionSeams {
+  hostCredentials?: HostCredentialFactory;
   /** Test seam: the credential source (the default runs `git credential fill` through the configured helper). */
   credential?: CredentialSource;
   /** Test seam: the HTTP client for the GitHub API. */
@@ -86,16 +101,18 @@ export function productionVaultOptions(config: HelperConfig, vault: RegisteredVa
   if (!config.tools) throw new Error("production options need a version 2 configuration");
   // Only a helper resolveProductionConfig checked (an absolute real path) ever runs.
   const helper = config.credentialHelper && isAbsolute(config.credentialHelper) ? config.credentialHelper : undefined;
-  const credential = seams.credential ?? (helper ? gitCredentialSource({ gitPath: config.tools.git, helper, ...(launch ? { launch } : {}) }) : null);
-  const github = vault.github && credential ? githubVisibility({ repository: vault.github.repository, credential, ...(seams.fetch ? { fetch: seams.fetch } : {}) }) : null;
+  const host = requiredHostCredentials(vault, launch, seams.hostCredentials);
+  const credential = host?.credential ?? seams.credential ?? (helper ? gitCredentialSource({ gitPath: config.tools.git, helper, ...(launch ? { launch } : {}) }) : null);
+  const github = vault.github && credential ? githubVisibility({ repository: vault.github.repository, repositoryId: vault.github.repositoryId, signal: host?.signal, credential, ...(seams.fetch ? { fetch: seams.fetch } : {}) }) : null;
   const remoteVisibility = (url: string): Promise<RemoteVisibility> => (isLocal(url) ? localVisibility(url) : github ? github(url) : Promise.resolve("unknown"));
   const historyProjection = requiredProjection(vault, seams.projections);
   return {
     ...(historyProjection ? { historyProjection } : {}),
     gitPath: config.tools.git,
     secretScanner: createGitleaksScanner({ gitleaksPath: config.tools.gitleaks, searchDirs: [], ...(launch ? { launch } : {}) }),
-    trustedCredentialHelpers: helper ? [helper] : [],
-    gitEnv: { ...REPOSITORY_SCOPED_CREDENTIALS },
+    ...(host ? { launch: host.launch } : launch ? { launch } : {}),
+    trustedCredentialHelpers: host ? host.helpers : helper ? [helper] : [],
+    gitEnv: host ? { ...REPOSITORY_SCOPED_CREDENTIALS, GIT_CONFIG_COUNT: "2", GIT_CONFIG_KEY_1: "http.followRedirects", GIT_CONFIG_VALUE_1: "false" } : { ...REPOSITORY_SCOPED_CREDENTIALS },
     remoteVisibility,
     visibilityRecheckMs: 0,
   };

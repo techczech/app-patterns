@@ -62,6 +62,9 @@ const USAGE = "usage: cli.ts run --config <file> --runtime-dir <folder> --max-ru
 /** What a host's own helper entry adds to the generic commands: trusted projections by name. */
 export interface HelperExtensions {
   projections?: ProductionSeams["projections"];
+  hostCredentials?: ProductionSeams["hostCredentials"];
+  signal?: AbortSignal;
+  maxRuntimeMs?: number;
 }
 export const EXIT_FORCED = 3;
 /** Containment passes come this often at first, while killed children are being reaped... */
@@ -238,13 +241,25 @@ export async function main(argv: string[], options: ForegroundOptions = {}, exte
   if (command === "preview" || command === "enable" || command === "disable") {
     if (!values.config || !values.vault) throw new Error(USAGE);
     const config = await loadHelperConfig(values.config);
-    const deps = projections ? { projections } : {};
+    const processes = createProcessRegistry();
+    const cancel = () => { void processes.end(); };
+    extensions.signal?.addEventListener("abort", cancel, { once: true });
+    if (extensions.signal?.aborted) cancel();
+    const signalGuard = guardSignals(eventWriter(options));
+    signalGuard.attach(cancel);
+    const deps = { projections, hostCredentials: extensions.hostCredentials, launch: processes.launch };
     const expected = values["expected-destination"];
+    try {
     const answer = command === "preview" ? await previewVault(config, values.vault, deps)
       : command === "enable" ? await enableVault(config, values.vault, { confirmPublic: values["confirm-public"] === true, ...(expected !== undefined ? { expectedDestinationDigest: expected } : {}) }, deps)
         : await disableVault(config, values.vault, deps);
     process.stdout.write(`${JSON.stringify(answer, null, 2)}\n`);
     return command === "enable" && !(answer as { enabled: boolean }).enabled ? 1 : 0;
+    } finally {
+      extensions.signal?.removeEventListener("abort", cancel);
+      signalGuard.dispose();
+      await processes.end();
+    }
   }
   const runtimeDir = values["runtime-dir"];
   if (!runtimeDir) throw new Error(USAGE);
@@ -259,17 +274,22 @@ export async function main(argv: string[], options: ForegroundOptions = {}, exte
     const processes = createProcessRegistry();
     // From here until the run has ended, a signal can only ask for a stop.
     const guard = guardSignals(event);
+    const seal = () => processes.seal();
+    extensions.signal?.addEventListener("abort", seal, { once: true });
+    if (extensions.signal?.aborted) seal();
     try {
       let handle: HelperHandle;
       try {
         handle = await startHelper({
           config,
           runtimeDir,
-          maxRuntimeMs: Number(values["max-runtime-ms"]),
+          maxRuntimeMs: Math.min(Number(values["max-runtime-ms"]), extensions.maxRuntimeMs ?? Infinity),
+          hostCredentials: extensions.hostCredentials,
+          projections,
           shutdownGraceMs: values["shutdown-grace-ms"] === undefined ? undefined : Number(values["shutdown-grace-ms"]),
           hardStopMs: values["hard-stop-ms"] === undefined ? undefined : Number(values["hard-stop-ms"]),
           processes,
-          ...(config.tools ? { engineOptions: productionSharedOptions(config)!, vaultEngineOptions: (vault) => productionVaultOptions(config, vault, processes.launch, projections ? { projections } : {}) } : {}),
+          ...(config.tools ? { engineOptions: productionSharedOptions(config)!, vaultEngineOptions: (vault) => vault.github?.credentialMode === "host" ? {} : productionVaultOptions(config, vault, processes.launch, projections ? { projections } : {}) } : {}),
           onEvent: (e) => event(e),
         });
       } catch (error) {
@@ -279,8 +299,13 @@ export async function main(argv: string[], options: ForegroundOptions = {}, exte
         if (code === null) throw error;
         return code;
       }
-      return await foreground(handle, options, guard);
+      const cancel = () => { void handle.stop("host-lifetime"); };
+      extensions.signal?.addEventListener("abort", cancel, { once: true });
+      if (extensions.signal?.aborted) cancel();
+      try { return await foreground(handle, options, guard); }
+      finally { extensions.signal?.removeEventListener("abort", cancel); }
     } finally {
+      extensions.signal?.removeEventListener("abort", seal);
       guard.dispose();
     }
   }

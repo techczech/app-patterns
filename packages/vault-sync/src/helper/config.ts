@@ -36,7 +36,7 @@ export interface RegisteredVault {
   /** Configured remote name. Default "origin". */
   remote: string;
   /** Version 2: the GitHub repository (`owner/name`) the remote must be; its visibility is checked before each push. */
-  github?: { repository: string };
+  github?: { repository: string; credentialMode?: "host"; repositoryId?: number };
   /** Version 2: the name of the history projection this vault requires (cli.ts HelperExtensions). */
   history?: string;
 }
@@ -130,9 +130,12 @@ export async function parseHelperConfig(value: unknown): Promise<HelperConfig> {
     if (e.github !== undefined) {
       const g = e.github as Record<string, unknown> | null;
       if (!g || typeof g !== "object" || Array.isArray(g)) throw new Error(`${where}.github must be an object`);
-      only(g, ["repository"], `${where}.github`);
+      only(g, ["repository", "credentialMode", "repositoryId"], `${where}.github`);
       if (typeof g.repository !== "string" || !GITHUB_REPOSITORY.test(g.repository) || g.repository.toLowerCase().endsWith(".git")) throw new Error(`${where}.github.repository must be owner/name`);
-      github = { repository: g.repository };
+      if (g.credentialMode !== undefined && g.credentialMode !== "host") throw new Error(`${where}.github.credentialMode must be host`);
+      if (g.repositoryId !== undefined && (!Number.isSafeInteger(g.repositoryId) || (g.repositoryId as number) <= 0)) throw new Error(`${where}.github.repositoryId must be a positive numeric ID`);
+      if (g.credentialMode === "host" && g.repositoryId === undefined) throw new Error(`${where}.github.repositoryId is required for host credentials`);
+      github = { repository: g.repository, ...(g.credentialMode === "host" ? { credentialMode: "host" as const } : {}), ...(g.repositoryId !== undefined ? { repositoryId: g.repositoryId as number } : {}) };
     }
     if (e.history !== undefined && (typeof e.history !== "string" || !PROJECTION_NAME.test(e.history))) throw new Error(`${where}.history must name a history projection (lower-case letters, digits and -)`);
     ids.add(e.id);
