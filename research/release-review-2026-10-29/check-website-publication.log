@@ -1,0 +1,87 @@
+$ astro check
+17:19:37 [vite] Re-optimizing dependencies because vite config has changed
+17:19:37 [types] Generated 468ms
+17:19:37 [check] Getting diagnostics for Astro files in [website]/build/app-patterns-publication...
+[96msrc/components/CountriesMap.astro[0m:[93m7[0m:[93m60[0m - [93mwarning[0m[90m ts(6133): [0m'CityMark' is declared but its value is never read.
+
+[7m7[0m import { countryMap as m, FILTERS, INSET, TONE_LABEL, type CityMark, type Filter, type Placement } from "../lib/cv-map";
+[7m [0m [93m                                                           ~~~~~~~~[0m
+[96msrc/components/CountriesMap.astro[0m:[93m7[0m:[93m43[0m - [93mwarning[0m[90m ts(6133): [0m'TONE_LABEL' is declared but its value is never read.
+
+[7m7[0m import { countryMap as m, FILTERS, INSET, TONE_LABEL, type CityMark, type Filter, type Placement } from "../lib/cv-map";
+[7m [0m [93m                                          ~~~~~~~~~~[0m
+
+[96msrc/lib/records.ts[0m:[93m151[0m:[93m9[0m - [93mwarning[0m[90m ts(6133): [0m'where' is declared but its value is never read.
+
+[7m151[0m   const where = [t.venue, t.place].filter(Boolean).join(", ");
+[7m   [0m [93m        ~~~~~[0m
+
+[96msrc/lib/agent/builders.ts[0m:[93m8[0m:[93m35[0m - [93mwarning[0m[90m ts(6133): [0m'longDate' is declared but its value is never read.
+
+[7m8[0m import { byYear as writingByYear, longDate, GENRE_LABEL, mondai, monthLabel, GUIDE_TYPE, GUIDE_TYPE_LABEL, pressArchive, TYPE_LABEL, whenLabel, writing } from "../writing";
+[7m [0m [93m                                  ~~~~~~~~[0m
+
+[96msrc/scripts/copy.ts[0m:[93m12[0m:[93m23[0m - [93mwarning[0m[90m ts(6387): [0mThe signature '(commandId: string, showUI?: boolean | undefined, value?: string | undefined): boolean' of 'document.execCommand' is deprecated.
+
+[7m12[0m   try { ok = document.execCommand("copy"); } catch { /* no clipboard available */ }
+[7m  [0m [93m                      ~~~~~~~~~~~[0m
+
+[96mtests/apps-interactions.test.ts[0m:[93m6[0m:[93m5[0m - [93mwarning[0m[90m ts(6133): [0m'browser' is declared but its value is never read.
+
+[7m6[0m let browser: Browser;
+[7m [0m [93m    ~~~~~~~[0m
+
+[96mtests/cv-countries.test.ts[0m:[93m360[0m:[93m7[0m - [93mwarning[0m[90m ts(6133): [0m'browser' is declared but its value is never read.
+
+[7m360[0m   let browser: Browser; let base: string;
+[7m   [0m [93m      ~~~~~~~[0m
+
+[96mtests/front-interactions.test.ts[0m:[93m6[0m:[93m5[0m - [93mwarning[0m[90m ts(6133): [0m'browser' is declared but its value is never read.
+
+[7m6[0m let browser: Browser;
+[7m [0m [93m    ~~~~~~~[0m
+[96mtests/front-interactions.test.ts[0m:[93m3[0m:[93m29[0m - [93mwarning[0m[90m ts(6133): [0m'BrowserContext' is declared but its value is never read.
+
+[7m3[0m import { type Browser, type BrowserContext, type Page } from "playwright-core";
+[7m [0m [93m                            ~~~~~~~~~~~~~~[0m
+
+[96mtests/header-interactions.test.ts[0m:[93m7[0m:[93m5[0m - [93mwarning[0m[90m ts(6133): [0m'browser' is declared but its value is never read.
+
+[7m7[0m let browser: Browser;
+[7m [0m [93m    ~~~~~~~[0m
+
+[96mtests/position.test.ts[0m:[93m8[0m:[93m28[0m - [93mwarning[0m[90m ts(6133): [0m'institution' is declared but its value is never read.
+
+[7m8[0m const { title, department, institution } = site.position;
+[7m [0m [93m                           ~~~~~~~~~~~[0m
+
+[96mtests/research-interactions.test.ts[0m:[93m6[0m:[93m5[0m - [93mwarning[0m[90m ts(6133): [0m'browser' is declared but its value is never read.
+
+[7m6[0m let browser: Browser;
+[7m [0m [93m    ~~~~~~~[0m
+
+[96mtests/search-records.test.ts[0m:[93m6[0m:[93m5[0m - [93mwarning[0m[90m ts(6133): [0m'browser' is declared but its value is never read.
+
+[7m6[0m let browser: Browser;
+[7m [0m [93m    ~~~~~~~[0m
+
+[96mtests/showcase.test.ts[0m:[93m7[0m:[93m1[0m - [93mwarning[0m[90m ts(6133): [0m'TEST_TODAY' is declared but its value is never read.
+
+[7m7[0m import { TEST_TODAY } from "../scripts/browser";
+[7m [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[96mtests/skills-interactions.test.ts[0m:[93m7[0m:[93m5[0m - [93mwarning[0m[90m ts(6133): [0m'browser' is declared but its value is never read.
+
+[7m7[0m let browser: Browser;
+[7m [0m [93m    ~~~~~~~[0m
+
+[96mtests/writing-interactions.test.ts[0m:[93m15[0m:[93m5[0m - [93mwarning[0m[90m ts(6133): [0m'browser' is declared but its value is never read.
+
+[7m15[0m let browser: Browser;
+[7m  [0m [93m    ~~~~~~~[0m
+
+Result (169 files): 
+- 0 errors
+- 0 warnings
+- 16 hints
+
