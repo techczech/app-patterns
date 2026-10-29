@@ -1,0 +1,16 @@
+{
+  "websiteCommit": "293cfc1fc5d3fd80dffeac7897d12dde162cea2a",
+  "deployment": "https://09936b7d.dominiklukes-net.pages.dev",
+  "verified": [
+    {
+      "url": "https://dominiklukes.net/apps/",
+      "sha256": "e75dc9d20ea008ce382637834d334dabc882fd020e6733bb64fcf3daa7f77c02",
+      "matchesBuild": true
+    },
+    {
+      "url": "https://dominiklukes.net/assets/app-patterns-examples.png",
+      "sha256": "4186c3836e0f469bea2923ed1e7fc01b4135bafa9fd00dba9fa0894bb0c1a9eb",
+      "matchesBuild": true
+    }
+  ]
+}
