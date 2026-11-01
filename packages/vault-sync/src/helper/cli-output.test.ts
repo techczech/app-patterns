@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { Writable } from "node:stream";
+import { sandbox, isolatedGitEnv } from "../test-fixtures.ts";
 import { writeOutput } from "./cli.ts";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -59,4 +60,22 @@ test("failed callback and EPIPE reject without an unhandled stream error", async
 test("a synchronous writer failure rejects", async () => {
   const stream = new Writable(); stream.write = (() => { throw new Error("synthetic writer failure"); }) as typeof stream.write;
   await expect(writeOutput(stream, "answer")).rejects.toThrow("synthetic writer failure");
+});
+
+for (const command of ["preview", "enable", "disable"]) test(`${command} awaits the same stdout callback before returning its exit code`, async () => {
+  const sb = sandbox(); dirs.push(sb.dir);
+  const source = join(sb.dir, "entry.ts"), config = join(sb.dir, "config.json");
+  writeFileSync(source, `import {main} from ${JSON.stringify(join(import.meta.dir, "cli.ts"))};
+import {writeSync} from 'node:fs';
+const write=process.stdout.write.bind(process.stdout);
+process.stdout.write=((text, callback)=>write(text, error=>setTimeout(()=>{writeSync(2,'WRITE_COMPLETED\\n'); callback?.(error);},30)));
+main(process.argv.slice(2)).then(code=>process.exit(code), error=>{console.error(error);process.exit(2)});`);
+  expect((await Bun.build({entrypoints:[source],outdir:sb.dir,naming:"entry.mjs",target:"node",format:"esm"})).success).toBe(true);
+  writeFileSync(config, JSON.stringify({configVersion:2,machineId:"m",tools:{git:"/Library/Developer/CommandLineTools/usr/bin/git",gitleaks:"/opt/homebrew/bin/gitleaks"},vaults:[{id:"v",path:sb.repo,include:["**/*.md"]}]}));
+  const result=spawnSync("/usr/local/bin/node",[join(sb.dir,"entry.mjs"),command,"--config",config,"--vault","v"],{encoding:"utf8",timeout:10000,env:{PATH:"/usr/bin:/bin",HOME:sb.dir,...isolatedGitEnv}});
+  expect(result.status).toBe(0); expect(result.stderr).toContain("WRITE_COMPLETED");
+  const answer=JSON.parse(result.stdout);
+  if(command==="enable") expect(answer.enabled).toBe(true);
+  if(command==="disable") expect(answer.disabled).toBe(true);
+  if(command==="preview") expect(answer.refused).toBeNull();
 });
