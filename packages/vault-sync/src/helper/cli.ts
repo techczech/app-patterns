@@ -47,6 +47,7 @@
  * command: `run` exits 2 before anything starts, `preview` reports the refusal and `enable` refuses.
  */
 import { writeSync } from "node:fs";
+import type { Writable } from "node:stream";
 import { parseArgs } from "node:util";
 import { loadHelperConfig } from "./config.ts";
 import { connectHelper } from "./client.ts";
@@ -220,6 +221,27 @@ export async function runForeground(handle: HelperHandle, options: ForegroundOpt
   }
 }
 
+/** Wait for the stream's write callback: accepted bytes may still be queued after write returns false.
+ * Shared by every one-shot answer, including hosts that call main then immediately exit.
+ * The error listener stays through a failed callback because Node emits error after that callback.
+ */
+export function writeOutput(stream: Writable, text: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const failed = (error: Error) => { reject(error); };
+    stream.once("error", failed);
+    try {
+      stream.write(text, (error?: Error | null) => {
+        if (error) { reject(error); return; }
+        stream.off("error", failed);
+        resolve();
+      });
+    } catch (error) {
+      stream.off("error", failed);
+      reject(error);
+    }
+  });
+}
+
 export async function main(argv: string[], options: ForegroundOptions = {}, extensions: HelperExtensions = {}): Promise<number> {
   const projections = extensions.projections;
   const [command, ...rest] = argv;
@@ -253,7 +275,7 @@ export async function main(argv: string[], options: ForegroundOptions = {}, exte
     const answer = command === "preview" ? await previewVault(config, values.vault, deps)
       : command === "enable" ? await enableVault(config, values.vault, { confirmPublic: values["confirm-public"] === true, ...(expected !== undefined ? { expectedDestinationDigest: expected } : {}) }, deps)
         : await disableVault(config, values.vault, deps);
-    process.stdout.write(`${JSON.stringify(answer, null, 2)}\n`);
+    await writeOutput(process.stdout, `${JSON.stringify(answer, null, 2)}\n`);
     return command === "enable" && !(answer as { enabled: boolean }).enabled ? 1 : 0;
     } finally {
       extensions.signal?.removeEventListener("abort", cancel);
@@ -316,7 +338,7 @@ export async function main(argv: string[], options: ForegroundOptions = {}, exte
       const response = command === "status"
         ? await client.request("status", values.vault ? { vault: values.vault } : {}, timeoutMs)
         : await client.request("syncNow", { vault: values.vault ?? "" }, timeoutMs);
-      process.stdout.write(`${JSON.stringify(response, null, 2)}\n`);
+      await writeOutput(process.stdout, `${JSON.stringify(response, null, 2)}\n`);
       return response.ok ? 0 : 1;
     } finally {
       client.close();
@@ -329,8 +351,9 @@ export async function main(argv: string[], options: ForegroundOptions = {}, exte
 export function runCli(argv: string[], extensions: HelperExtensions = {}): void {
   main(argv, {}, extensions).then(
     (code) => process.exit(code),
-    (error) => {
-      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    async (error) => {
+      try { await writeOutput(process.stderr, `${error instanceof Error ? error.message : String(error)}\n`); }
+      catch { /* A closed diagnostic pipe cannot turn a failed command into success. */ }
       process.exit(2);
     },
   );

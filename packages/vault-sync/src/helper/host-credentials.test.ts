@@ -98,7 +98,11 @@ test('actual CLI preview forwards host factory and refuses host config without i
     git(b.repo, ['remote','set-url','origin','https://github.com/owner/repo.git']);
     const file = join(b.dir,'host-config.json');
     writeFileSync(file, JSON.stringify({configVersion:2,machineId:'m',tools:{git:GIT,gitleaks:LEAKS},vaults:[{id:'v',path:b.repo,include:['**/*.md'],github:vault.github}]}),{mode:0o600});
-    process.stdout.write = (() => true) as typeof process.stdout.write;
+    process.stdout.write = ((_chunk, encodingOrCallback, callback) => {
+      const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+      queueMicrotask(() => done?.());
+      return true;
+    }) as typeof process.stdout.write;
     await expect(main(['preview','--config',file,'--vault','v'])).rejects.toThrow('host credentials');
     const code = await main(['preview','--config',file,'--vault','v'],{}, {hostCredentials(_v,launch){called++;return {credential:async()=>null,launch:(...args)=>launch(...args),helpers:['!fixed']}}});
     expect(code).toBe(0); expect(called).toBeGreaterThan(0);
