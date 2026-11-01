@@ -7,6 +7,14 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+function executable(name: string): string {
+  const path = Bun.which(name);
+  if (!path) throw new Error(`These output tests require ${name} on PATH`);
+  return realpathSync(path);
+}
+const NODE = executable("node");
+const GIT = executable("git");
+
 const dirs: string[] = [];
 afterEach(() => { while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true }); });
 
@@ -33,7 +41,7 @@ child.stderr.on('data', c => stderr += c);
 child.once('exit', code => exit = code);
 setTimeout(() => child.stdout.resume(), 200);
 child.once('close', close => {const bytes=Buffer.concat(chunks); let answer=null; try {answer=JSON.parse(bytes.toString('utf8'));}catch{}; process.stdout.write(JSON.stringify({exit,close,stderr,bytes:bytes.length, answer}));});`);
-  const run = spawnSync("/opt/homebrew/bin/node", [supervisor], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024, timeout: 10000 });
+  const run = spawnSync(NODE, [supervisor], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024, timeout: 10000 });
   expect(run.status).toBe(0);
   const result = JSON.parse(run.stdout);
   console.log(JSON.stringify({ mode, bytes: result.bytes, exit: result.exit, close: result.close, backpressure: result.stderr.includes("BACKPRESSURE") }));
@@ -71,8 +79,12 @@ const write=process.stdout.write.bind(process.stdout);
 process.stdout.write=((text, callback)=>write(text, error=>setTimeout(()=>{writeSync(2,'WRITE_COMPLETED\\n'); callback?.(error);},30)));
 main(process.argv.slice(2)).then(code=>process.exit(code), error=>{console.error(error);process.exit(2)});`);
   expect((await Bun.build({entrypoints:[source],outdir:sb.dir,naming:"entry.mjs",target:"node",format:"esm"})).success).toBe(true);
-  writeFileSync(config, JSON.stringify({configVersion:2,machineId:"m",tools:{git:"/Library/Developer/CommandLineTools/usr/bin/git",gitleaks:"/opt/homebrew/bin/gitleaks"},vaults:[{id:"v",path:sb.repo,include:["**/*.md"]}]}));
-  const result=spawnSync("/usr/local/bin/node",[join(sb.dir,"entry.mjs"),command,"--config",config,"--vault","v"],{encoding:"utf8",timeout:10000,env:{PATH:"/usr/bin:/bin",HOME:sb.dir,...isolatedGitEnv}});
+  // MOCK version probe only: output-completion tests do not scan or publish any content.
+  // Any unexpected scanner invocation fails rather than pretending a scan passed.
+  const scanner = join(sb.dir, "mock-gitleaks");
+  writeFileSync(scanner, '#!/bin/sh\n[ "$1" = "version" ] || exit 64\nprintf "8.30.1\\n"\n', { mode: 0o700 });
+  writeFileSync(config, JSON.stringify({configVersion:2,machineId:"m",tools:{git:GIT,gitleaks:scanner},vaults:[{id:"v",path:sb.repo,include:["**/*.md"]}]}));
+  const result=spawnSync(NODE,[join(sb.dir,"entry.mjs"),command,"--config",config,"--vault","v"],{encoding:"utf8",timeout:10000,env:{PATH:"/usr/bin:/bin",HOME:sb.dir,...isolatedGitEnv}});
   expect(result.status).toBe(0); expect(result.stderr).toContain("WRITE_COMPLETED");
   const answer=JSON.parse(result.stdout);
   if(command==="enable") expect(answer.enabled).toBe(true);
